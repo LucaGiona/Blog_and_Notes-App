@@ -1,0 +1,5 @@
+// Einstellungen für markdownlint (auch die VS-Code-Erweiterung liest diese Datei)
+{
+  // LICENSE ist reiner Text, kein Markdown
+  "ignores": ["LICENSE"]
+}

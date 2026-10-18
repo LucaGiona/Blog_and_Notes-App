@@ -1,0 +1,9 @@
+# Hier liegen nur Bilder. Falls doch etwas anderes hier landet:
+# niemals als Programm ausführen.
+Options -Indexes
+<FilesMatch "\.(php\d?|phtml|phar|pl|py|cgi|sh|html?|svg)$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+</IfModule>

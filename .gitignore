@@ -1,0 +1,19 @@
+# Eigene Daten – gehören nie ins Repo
+php/data/*
+!php/data/.htaccess
+php/uploads/*
+!php/uploads/.htaccess
+!php/uploads/.gitkeep
+go/data/*
+!go/data/.gitkeep
+go/uploads/*
+!go/uploads/.gitkeep
+
+# Gebautes Go-Programm
+go/notizblog
+go/notizblog.exe
+
+# System / Editor
+.DS_Store
+.vscode/
+.idea/

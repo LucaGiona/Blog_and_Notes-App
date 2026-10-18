@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Blog</title>
+  <meta name="description" content="Blog – Gedanken, Notizen und Code.">
+
+  <!-- PWA: installierbar auf Handy und Laptop -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#faf8f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171614" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Blog">
+
+  <link rel="preload" href="fonts/bricolage-grotesque-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/ibm-plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- type="module" lädt automatisch "deferred": erst nach dem Parsen des HTML -->
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="site-header">
+    <a href="#/" class="brand">Blog</a>
+    <nav class="nav" id="nav"></nav>
+  </header>
+
+  <main id="app" class="container" aria-live="polite"></main>
+
+  <footer class="site-footer">
+    <span id="storage-mode"></span>
+    <span id="sync-status" aria-live="polite"></span>
+    <span id="homepage-status" aria-live="polite" hidden></span>
+    <button type="button" id="homepage-publish" class="link-button" hidden>Homepage aktualisieren</button>
+    <button type="button" id="logout-all" class="link-button" hidden>Alle Geräte abmelden</button>
+    <a href="#/admin" id="login-link" class="link-button" hidden>Anmelden</a>
+  </footer>
+</body>
+</html>

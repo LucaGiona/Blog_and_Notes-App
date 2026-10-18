@@ -1,0 +1,57 @@
+/* Schriften lokal aus fonts/ – funktionieren dadurch auch offline (PWA).
+   Alle drei: SIL Open Font License, siehe fonts/OFL-LICENSE.txt */
+
+/* Bricolage Grotesque – variabel, eine Datei für 200–800 */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("../fonts/bricolage-grotesque-variable.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* IBM Plex Sans */
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/ibm-plex-sans-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/ibm-plex-sans-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("../fonts/ibm-plex-sans-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* IBM Plex Mono */
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/ibm-plex-mono-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/ibm-plex-mono-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("../fonts/ibm-plex-mono-600.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,0 +1,30 @@
+# Für Apache beim Hoster (lokal wird router.php benutzt).
+
+Options -Indexes
+DirectoryIndex index.html
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Interne Ordner sperren
+  RewriteRule ^(data|src|bin)(/|$) - [F,L]
+  RewriteRule ^router\.php$ - [F,L]
+
+  # Alle API-Anfragen an api.php
+  RewriteRule ^api(/.*)?$ api.php [QSA,L]
+</IfModule>
+
+# Versteckte Dateien (.gitignore, .htaccess …) sperren
+<FilesMatch "^\.">
+  Require all denied
+</FilesMatch>
+
+AddType font/woff2 .woff2
+AddType application/manifest+json .webmanifest
+
+# Service Worker: Browser soll Updates sofort sehen
+<Files "sw.js">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+  </IfModule>
+</Files>
