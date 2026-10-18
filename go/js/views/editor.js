@@ -8,6 +8,7 @@ import { showPendingImages } from '../storage/sync.js';
 import { collectTags, cleanTag, sameTag, MAX_TAGS } from '../tags.js';
 import { escapeHtml } from '../utils.js';
 import { requestPublish } from '../homepage.js';
+import { setMenuExtras } from '../nav.js';
 
 export async function renderEditor(root, store, id = null) {
   let post = null;
@@ -27,11 +28,13 @@ export async function renderEditor(root, store, id = null) {
 
   root.innerHTML = `
     <form class="editor" autocomplete="off">
-      <input class="editor-title" name="title" placeholder="Titel" required>
-
-      <div class="tag-picker" role="group" aria-label="Sichtbarkeit und Themen">
+      <div class="field title-field">
+        <input class="editor-title" name="title" placeholder="Titel" required aria-describedby="title-error">
         <button type="button" class="privacy-toggle" aria-pressed="true"></button>
-        <span class="tag-divider" aria-hidden="true"></span>
+        <p class="field-error" id="title-error" role="alert" hidden></p>
+      </div>
+
+      <div class="tag-picker" role="group" aria-label="Themen">
         <div class="tag-options"></div>
         <input class="tag-input" placeholder="+ Thema" maxlength="30" enterkeyhint="done"
           aria-label="Neues Thema (Enter zum Hinzufügen)">
@@ -49,7 +52,7 @@ export async function renderEditor(root, store, id = null) {
           ${canUpload ? `
             <button type="button" class="tool" data-tool="image" title="Bild einfügen (auch per Drag & Drop oder Einfügen)">＋ Bild</button>
             <input type="file" accept="image/*" multiple hidden data-file>` : ''}
-          <button type="button" class="tool" data-tool="code" title="Code-Block einfügen">{ } Code</button>
+          <button type="button" class="tool" data-tool="code" title="Block einfügen – für Code oder Text, mit Kopieren-Knopf">{ } Block</button>
         </div>
       </div>
 
@@ -62,11 +65,12 @@ export async function renderEditor(root, store, id = null) {
         </div>
       </div>
 
-      <textarea class="editor-body" name="body"
-        placeholder="Hier schreiben …&#10;&#10;Leerzeile = neuer Absatz · **fett** · *kursiv* · # Überschrift · \`\`\` = Code-Block"></textarea>
+      <p class="md-hint">Leerzeile = neuer Absatz · **fett** · *kursiv* · # Überschrift · \`\`\` = Block</p>
+      <textarea class="editor-body" name="body" placeholder="Hier schreiben …"></textarea>
       <div class="editor-preview md" hidden></div>
 
       <div class="toolbar">
+        <p class="editor-alert" role="alert" hidden></p>
         <span class="save-status" aria-live="polite"></span>
         <span class="spacer"></span>
         <button type="button" class="btn btn-danger" data-action="delete" ${post ? '' : 'hidden'}>Löschen</button>
@@ -82,6 +86,28 @@ export async function renderEditor(root, store, id = null) {
   const body = form.elements.body;
   const preview = root.querySelector('.editor-preview');
   const status = root.querySelector('.save-status');
+  const titleError = root.querySelector('#title-error');
+  const alertBox = root.querySelector('.editor-alert');
+
+  // ---------- Fehlermeldungen ----------
+  // Titel fehlt -> Hinweis direkt unter dem Titelfeld.
+  // Alles andere (Speichern, Bild, Löschen …) -> Hinweisfeld über den Knöpfen.
+  function showError(message, field = null) {
+    if (field === title) {
+      titleError.textContent = message;
+      titleError.hidden = false;
+      title.setAttribute('aria-invalid', 'true');
+      title.focus();
+    } else {
+      alertBox.textContent = message;
+      alertBox.hidden = false;
+    }
+    status.textContent = '';
+  }
+  function clearErrors() {
+    titleError.hidden = alertBox.hidden = true;
+    title.removeAttribute('aria-invalid');
+  }
   const fileInput = root.querySelector('[data-file]');
 
   // Werte über .value setzen statt im HTML -> kein Escaping-Problem
@@ -103,6 +129,8 @@ export async function renderEditor(root, store, id = null) {
   let saved = { title: post?.title ?? '', body: post?.body ?? '', tags: [...tags], private: isPrivate };
   let conflict = null;     // Fassung vom anderen Gerät, solange der Hinweis offen ist
   let saving = null;       // laufender Speichervorgang
+  let leaving = false;     // Editor wird gerade verlassen (Speichern im Hintergrund)
+  let deleted = false;     // Artikel gelöscht -> beim Verlassen nichts mehr speichern
 
   const sameTags = (a, b) => a.length === b.length && a.every((t, i) => sameTag(t, b[i]));
   const isDirty = () =>
@@ -193,7 +221,7 @@ export async function renderEditor(root, store, id = null) {
         ? `„${from}“ heißt jetzt „${to}“ (${changed} Artikel)`
         : `„${from}“ gelöscht (${changed} Artikel)`;
     } catch (err) {
-      status.textContent = err.message;
+      showError(`Thema nicht geändert: ${err.message}`);
       return;
     }
     const swap = list => {
@@ -271,12 +299,13 @@ export async function renderEditor(root, store, id = null) {
 
   // ---------- Speichern ----------
 
-  function save(newStatus) {
-    saving = doSave(newStatus).finally(() => { saving = null; });
+  // explicit = per Knopf (Zwischenspeichern/Veröffentlichen) – nur dann meckert ein fehlender Titel laut
+  function save(newStatus, explicit = false) {
+    saving = doSave(newStatus, explicit).finally(() => { saving = null; });
     return saving;
   }
 
-  async function doSave(newStatus) {
+  async function doSave(newStatus, explicit) {
     if (conflict) return null; // erst entscheiden, welche Fassung gilt
     const data = {
       title: title.value.trim(),
@@ -286,7 +315,8 @@ export async function renderEditor(root, store, id = null) {
       private: isPrivate,
     };
     if (!data.title) {
-      status.textContent = 'Erst einen Titel eingeben';
+      if (explicit) showError('Bitte zuerst einen Titel eingeben – ohne Titel wird nicht gespeichert.', title);
+      else status.textContent = 'Noch nicht gespeichert – wird gespeichert, sobald ein Titel da ist';
       return null;
     }
 
@@ -300,12 +330,13 @@ export async function renderEditor(root, store, id = null) {
         showConflict(err.current);
         return null;
       }
-      status.textContent = err.message === 'Nicht angemeldet'
-        ? 'Nicht gespeichert – Anmeldung abgelaufen. Text kopieren, dann neu anmelden.'
-        : `Nicht gespeichert: ${err.message}`;
+      showError(err.message === 'Nicht angemeldet'
+        ? 'Nicht gespeichert – die Anmeldung ist abgelaufen. Text kopieren, dann neu anmelden.'
+        : `Nicht gespeichert: ${err.message}`);
       return null;
     }
 
+    clearErrors();
     saved = { title: data.title, body: data.body, tags: data.tags, private: data.private };
     // Privat umgeschaltet: Homepage nachziehen (bei privat -> dort entfernen; bei
     // öffentlich + veröffentlicht -> dort zeigen). Autosave allein löst nichts aus.
@@ -317,8 +348,8 @@ export async function renderEditor(root, store, id = null) {
     // Offline (Postausgang) hat der Server noch nichts -> Stand bleibt der alte
     if (!post.pending) base = revOf(post);
 
-    // URL auf "edit" umstellen, ohne die Seite neu zu rendern
-    history.replaceState(null, '', `#/edit/${post.id}`);
+    // URL auf "edit" umstellen, ohne die Seite neu zu rendern (nicht, wenn schon woanders)
+    if (!leaving) history.replaceState(null, '', `#/edit/${post.id}`);
     const time = new Date(post.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
     status.textContent = post.pending
       ? `Offline gespeichert um ${time} – wird synchronisiert, sobald der Server erreichbar ist`
@@ -330,6 +361,10 @@ export async function renderEditor(root, store, id = null) {
   const autosave = debounce(() => save(), 1500);
   form.addEventListener('input', e => {
     if (e.target === fileInput || e.target === tagInput) return;
+    if (e.target === title && title.value.trim()) {
+      titleError.hidden = true;
+      title.removeAttribute('aria-invalid');
+    }
     status.textContent = 'Ungespeicherte Änderungen';
     autosave();
   });
@@ -337,7 +372,7 @@ export async function renderEditor(root, store, id = null) {
   form.addEventListener('submit', async e => {
     e.preventDefault();
     autosave.cancel();
-    const saved = await save('published');
+    const saved = await save('published', true);
     if (saved) {
       requestPublish(); // öffentliche Artikel gehen damit auf die Homepage
       location.hash = `#/post/${saved.id}`;
@@ -398,7 +433,7 @@ export async function renderEditor(root, store, id = null) {
         status.textContent = pending ? 'Bild offline gespeichert – wird später hochgeladen' : 'Bild eingefügt';
       } catch (err) {
         replaceMarker(marker, '');
-        status.textContent = `Bild nicht hochgeladen: ${err.message}`;
+        showError(`Bild nicht hochgeladen: ${err.message}`);
       }
     }
   }
@@ -457,6 +492,7 @@ export async function renderEditor(root, store, id = null) {
     }
     preview.hidden = !isPreview;
     body.hidden = isPreview;
+    root.querySelector('.md-hint').hidden = isPreview; // Schreibhilfe nur beim Schreiben
     form.querySelectorAll('[data-tab]').forEach(b => {
       b.classList.toggle('is-active', b.dataset.tab === tab);
       b.setAttribute('aria-selected', b.dataset.tab === tab);
@@ -526,16 +562,17 @@ export async function renderEditor(root, store, id = null) {
     const action = el.dataset.action;
     if (action === 'draft') {
       autosave.cancel();
-      await save('draft');
+      await save('draft', true);
     }
     if (action === 'delete' && confirm('Artikel wirklich löschen?')) {
       autosave.cancel();
       try {
         await store.remove(post.id);
+        deleted = true;
         requestPublish(); // war er auf der Homepage, verschwindet er dort
         location.hash = '#/';
       } catch (err) {
-        status.textContent = `Nicht gelöscht: ${err.message}`;
+        showError(`Nicht gelöscht: ${err.message}`);
       }
     }
   });
@@ -595,9 +632,30 @@ export async function renderEditor(root, store, id = null) {
   };
   window.addEventListener('outbox:idmap', onIdMap);
 
+  // Beim Verlassen nichts verlieren: Ungespeichertes sofort speichern.
+  // Text ohne Titel wird als privater Entwurf „Ohne Titel“ gesichert (bei einem
+  // bestehenden Artikel mit gelöschtem Titel bleibt der bisherige Titel).
+  function leaveSave() {
+    if (deleted || conflict || !isDirty()) return;
+    if (!title.value.trim() && !body.value.trim()) return; // ganz leer -> nichts zu sichern
+    leaving = true;
+    if (!title.value.trim()) title.value = saved.title || 'Ohne Titel';
+    (saving ?? Promise.resolve())
+      .then(() => save())
+      .then(p => { if (p) window.dispatchEvent(new Event('data:changed')); }); // Liste zeigt ihn sofort
+  }
+
+  // Auf dem Handy wandern „＋ Bild“ und „{ } Block“ ins Burger-Menü (CSS blendet sie hier aus)
+  setMenuExtras([
+    ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
+    { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
+  ]);
+
   // Aufräumfunktion für den Router
   return () => {
     autosave.cancel();
+    setMenuExtras([]);
+    leaveSave();
     window.removeEventListener('outbox:idmap', onIdMap);
     window.removeEventListener('data:changed', onDataChanged);
   };

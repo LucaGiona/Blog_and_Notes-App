@@ -174,6 +174,20 @@ a { color: inherit; }
   }
   .nav.is-open .nav-menu { display: flex; }
   .nav-menu .btn { justify-content: center; padding: .75rem 1rem; font-size: 1rem; }
+  /* Seitenabhängige Punkte (Editor: Bild, Block) oben, darunter eine Linie */
+  .nav-extra {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+    padding-bottom: .75rem;
+    margin-bottom: .25rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-extra .btn { font-family: var(--mono); font-size: .9rem; }
+}
+/* Am Laptop stehen Bild/Block auf der Seite – im Menü nicht nötig */
+@media (min-width: 601px) {
+  .nav-extra { display: none; }
 }
 
 @media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
@@ -288,19 +302,61 @@ a { color: inherit; }
 .editor-title::placeholder,
 .editor-body::placeholder { color: var(--muted); opacity: .6; }
 
+/* Unten, immer gleich (Handy und Desktop):
+   Hinweis · Status · Löschen links, Zwischenspeichern rechts · darunter breit Veröffentlichen/Aktualisieren */
 .toolbar {
   position: sticky;
   bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas:
+    "alert alert"
+    "status status"
+    "delete draft"
+    "submit submit";
   gap: .5rem;
   align-items: center;
   padding: .75rem 0;
   background: var(--bg);
   border-top: 1px solid var(--line);
 }
-.toolbar .spacer { flex: 1; }
+.toolbar .spacer { display: none; }
+.toolbar [hidden] { display: none; } /* z. B. „Löschen“ bei neuen Artikeln */
+.toolbar .editor-alert { grid-area: alert; }
+.toolbar .save-status { grid-area: status; }
+.toolbar [data-action="delete"] { grid-area: delete; justify-self: start; }
+.toolbar [data-action="draft"] { grid-area: draft; justify-self: end; }
+.toolbar [type="submit"] { grid-area: submit; width: 100%; justify-content: center; }
+.toolbar .save-status:empty { display: none; }
 .save-status { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+
+/* Fehlermeldungen im Editor – wie ein Hinweis an einem Eingabefeld */
+.field { display: grid; gap: .4rem; }
+/* Titel + Privat/Öffentlich-Schalter in einer Zeile, Fehlerhinweis darunter */
+.title-field { grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; align-items: center; }
+.title-field .field-error { grid-column: 1 / -1; }
+.title-field .privacy-toggle { white-space: nowrap; }
+.editor-title[aria-invalid="true"] { border-bottom: 2px solid var(--accent); }
+.field-error,
+.editor-alert {
+  margin: 0;
+  font-size: .95rem;
+  line-height: 1.45;
+  color: var(--accent);
+}
+.field-error::before,
+.editor-alert::before { content: "⚠ "; }
+.editor-alert {
+  flex-basis: 100%;
+  padding: .6rem .85rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  color: var(--text);
+}
+.editor-alert::before { color: var(--accent); }
+.field-error[hidden],
+.editor-alert[hidden] { display: none; }
 
 /* ---------- Artikel-Ansicht ---------- */
 .article h1 {
@@ -376,6 +432,16 @@ a { color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 .format-bar .spacer { flex: 1; }
+
+/* Schreibhilfe unter der Leiste – bleibt sichtbar, auch wenn schon Text da ist */
+.md-hint {
+  margin: -.5rem 0 0;
+  font-family: var(--mono);
+  font-size: .75rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.md-hint[hidden] { display: none; }
 
 .tabs,
 .tools { display: flex; gap: .4rem; }
@@ -584,33 +650,14 @@ a { color: inherit; }
 
 /* ---------- Handy: Editor-Leisten ---------- */
 @media (max-width: 600px) {
-  /* Oben: Schreiben/Vorschau links untereinander, Bild/Code rechts untereinander */
-  .format-bar { flex-wrap: nowrap; align-items: flex-start; }
-  .tabs,
-  .tools { flex-direction: column; gap: .4rem; }
-  .tools { align-items: stretch; }
-  .tab,
-  .tool { min-width: 7.5rem; padding: .6rem .9rem; font-size: .85rem; text-align: center; }
+  /* Oben: nur Schreiben/Vorschau – „＋ Bild“ und „{ } Block“ sind im Burger-Menü */
+  .format-bar .tools,
+  .format-bar .spacer { display: none; }
+  .tab { min-width: 7.5rem; padding: .6rem .9rem; font-size: .85rem; text-align: center; }
 
-  /* Unten: Status · Löschen links, Zwischenspeichern rechts · darunter Veröffentlichen/Aktualisieren */
-  .toolbar {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas:
-      "status status"
-      "delete draft"
-      "submit submit";
-    gap: .5rem;
-    padding-bottom: calc(.75rem + env(safe-area-inset-bottom));
-  }
-  .toolbar .spacer { display: none; }
-  .toolbar .save-status { grid-area: status; }
-  .toolbar [data-action="delete"] { grid-area: delete; justify-self: start; }
-  .toolbar [hidden] { display: none; }
-  .toolbar [data-action="draft"] { grid-area: draft; justify-self: end; }
-  .toolbar [type="submit"] { grid-area: submit; }
+  /* Unten: gleiche Anordnung wie auf dem Desktop, nur größere Knöpfe */
+  .toolbar { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
   .toolbar .btn { justify-content: center; padding: .7rem 1rem; font-size: .95rem; }
-  .toolbar [type="submit"] { width: 100%; }
 }
 
 /* ---------- Themen (Tags) ---------- */
@@ -793,7 +840,7 @@ body:has(.timeline) .site-header {
 }
 
 /* ---------- Privat ---------- */
-/* Schalter im Editor (vor den Themen) */
+/* Schalter im Editor (rechts neben dem Titel) */
 .privacy-toggle {
   font-family: var(--mono);
   font-size: .75rem;
@@ -809,7 +856,6 @@ body:has(.timeline) .site-header {
 /* Öffentlich: grün wie „Veröffentlicht“ – auffällig, weil es auf die Homepage kann */
 .privacy-toggle:not(.is-active) { background: var(--published-bg); border-color: var(--published); color: var(--published); }
 .privacy-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.tag-divider { width: 1px; height: 1.4rem; background: var(--line-strong); margin: 0 .2rem; }
 
 /* Filter über dem Zeitstrahl (nur angemeldet): Alle / Öffentlich / Privat */
 .scope-filter {

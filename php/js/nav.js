@@ -11,8 +11,20 @@ const ICON_MENU = `<svg class="icon-open" viewBox="0 0 24 24" width="22" height=
 const ICON_CLOSE = `<svg class="icon-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 
 let closeMenu = () => {};
+let last = null;      // zuletzt gezeichnete Navigation (für setMenuExtras)
+let extras = [];      // Zusatzpunkte der aktuellen Seite, z. B. im Editor „＋ Bild“, „{ } Block“
+
+/**
+ * Seitenabhängige Punkte im Burger-Menü (nur auf dem Handy sichtbar, am Laptop
+ * stehen sie auf der Seite selbst). items = [{ label, onClick }], [] = keine.
+ */
+export function setMenuExtras(items) {
+  extras = items;
+  if (last) renderNav(...last);
+}
 
 export function renderNav(nav, { onLogout }) {
+  last = [nav, { onLogout }];
   closeMenu();
 
   const items = [];
@@ -28,7 +40,11 @@ export function renderNav(nav, { onLogout }) {
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Menü öffnen">
       ${ICON_MENU}${ICON_CLOSE}
     </button>
-    <div class="nav-menu" id="nav-menu">${items.join('')}</div>`;
+    <div class="nav-menu" id="nav-menu">${extras.length ? `
+      <div class="nav-extra">${extras.map((x, i) =>
+        `<button type="button" class="btn" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
+      ${items.join('')}
+    </div>`;
 
   const toggle = nav.querySelector('.nav-toggle');
 
@@ -48,6 +64,10 @@ export function renderNav(nav, { onLogout }) {
     if (e.target.closest('a, button')) closeMenu();
   });
   nav.querySelector('[data-action="logout"]')?.addEventListener('click', onLogout);
+  nav.querySelector('.nav-extra')?.addEventListener('click', e => {
+    const btn = e.target.closest('[data-extra]');
+    if (btn) extras[btn.dataset.extra]?.onClick();
+  });
 }
 
 // Menü schließen: Klick daneben, Escape, Seitenwechsel
