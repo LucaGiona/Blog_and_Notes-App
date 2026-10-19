@@ -87,6 +87,8 @@ export async function renderEditor(root, store, id = null) {
   const preview = root.querySelector('.editor-preview');
   const status = root.querySelector('.save-status');
   const titleError = root.querySelector('#title-error');
+  // Statuszeile: immer eine Zeile (CSS kürzt mit …), voller Text als Tooltip
+  const setStatus = text => { status.textContent = text; status.title = text; };
   const alertBox = root.querySelector('.editor-alert');
 
   // ---------- Fehlermeldungen ----------
@@ -102,7 +104,7 @@ export async function renderEditor(root, store, id = null) {
       alertBox.textContent = message;
       alertBox.hidden = false;
     }
-    status.textContent = '';
+    setStatus('');
   }
   function clearErrors() {
     titleError.hidden = alertBox.hidden = true;
@@ -142,7 +144,7 @@ export async function renderEditor(root, store, id = null) {
     conflict = current;
     autosave.cancel();
     conflictBox.hidden = false;
-    status.textContent = 'Nicht gespeichert – bitte Fassung wählen';
+    setStatus('Nicht gespeichert – bitte Fassung wählen');
   }
 
   function loadVersion(current) {
@@ -172,9 +174,9 @@ export async function renderEditor(root, store, id = null) {
     isPrivate = !isPrivate;
     publishAfterSave = true;
     renderPrivacy();
-    status.textContent = isPrivate
-      ? 'Privat – nur du siehst diesen Artikel (wird gespeichert …)'
-      : 'Öffentlich – kommt beim Veröffentlichen auf die Homepage (wird gespeichert …)';
+    setStatus(isPrivate
+      ? '🔒 Privat – nur für dich · speichert …'
+      : '🌐 Öffentlich – geht beim Veröffentlichen auf die Homepage');
     autosave();
   });
   renderPrivacy();
@@ -217,9 +219,9 @@ export async function renderEditor(root, store, id = null) {
   async function changeTagEverywhere(from, to) {
     try {
       const { changed } = await store.renameTag(from, to);
-      status.textContent = to
+      setStatus(to
         ? `„${from}“ heißt jetzt „${to}“ (${changed} Artikel)`
-        : `„${from}“ gelöscht (${changed} Artikel)`;
+        : `„${from}“ gelöscht (${changed} Artikel)`);
     } catch (err) {
       showError(`Thema nicht geändert: ${err.message}`);
       return;
@@ -245,7 +247,7 @@ export async function renderEditor(root, store, id = null) {
 
   function tagsChanged() {
     renderTags();
-    status.textContent = 'Ungespeicherte Änderungen';
+    setStatus('Ungespeicherte Änderungen');
     autosave();
   }
 
@@ -309,18 +311,18 @@ export async function renderEditor(root, store, id = null) {
     if (conflict) return null; // erst entscheiden, welche Fassung gilt
     const data = {
       title: title.value.trim(),
-      body: body.value,
+      body: withoutMarkers(body.value), // „Bild wird hochgeladen …“ nie speichern
       status: newStatus ?? post?.status ?? 'draft',
       tags: [...tags],
       private: isPrivate,
     };
     if (!data.title) {
       if (explicit) showError('Bitte zuerst einen Titel eingeben – ohne Titel wird nicht gespeichert.', title);
-      else status.textContent = 'Noch nicht gespeichert – wird gespeichert, sobald ein Titel da ist';
+      else setStatus('Noch ohne Titel – nicht gespeichert');
       return null;
     }
 
-    status.textContent = 'Speichert …';
+    setStatus('Speichert …');
     try {
       post = post
         ? await store.update(post.id, { ...data, baseUpdatedAt: base ?? undefined })
@@ -351,9 +353,9 @@ export async function renderEditor(root, store, id = null) {
     // URL auf "edit" umstellen, ohne die Seite neu zu rendern (nicht, wenn schon woanders)
     if (!leaving) history.replaceState(null, '', `#/edit/${post.id}`);
     const time = new Date(post.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    status.textContent = post.pending
-      ? `Offline gespeichert um ${time} – wird synchronisiert, sobald der Server erreichbar ist`
-      : `Gespeichert um ${time}`;
+    setStatus(post.pending
+      ? `Offline gespeichert ${time} · wartet auf den Server`
+      : `Gespeichert um ${time}`);
     return post;
   }
 
@@ -365,7 +367,7 @@ export async function renderEditor(root, store, id = null) {
       titleError.hidden = true;
       title.removeAttribute('aria-invalid');
     }
-    status.textContent = 'Ungespeicherte Änderungen';
+    setStatus('Ungespeicherte Änderungen');
     autosave();
   });
 
@@ -415,6 +417,11 @@ export async function renderEditor(root, store, id = null) {
   // ---------- Bilder ----------
 
   let uploadCount = 0;
+  let uploading = 0; // Bilder, die gerade hochgeladen werden
+
+  // Platzhalter, solange ein Bild hochgeladen wird – darf nie gespeichert werden
+  const MARKER = /^!\[Bild wird hochgeladen … \d+\]\(\)\n?/gm;
+  const withoutMarkers = text => text.replace(MARKER, '');
 
   async function uploadImages(files) {
     const images = [...files].filter(f => f.type.startsWith('image/'));
@@ -425,15 +432,20 @@ export async function renderEditor(root, store, id = null) {
       // Platzhalter sofort einfügen, damit man weiterschreiben kann
       const marker = `![Bild wird hochgeladen … ${++uploadCount}]()`;
       insert(asBlock(marker));
-      status.textContent = 'Bild wird hochgeladen …';
+      setStatus('Bild wird hochgeladen …');
+      uploading++;
 
       try {
         const { url, pending } = await store.upload(await prepareImage(file));
         replaceMarker(marker, `![${altFrom(file.name)}](${url})`);
-        status.textContent = pending ? 'Bild offline gespeichert – wird später hochgeladen' : 'Bild eingefügt';
+        setStatus(pending ? 'Bild offline gespeichert – wird später hochgeladen' : 'Bild eingefügt');
       } catch (err) {
         replaceMarker(marker, '');
         showError(`Bild nicht hochgeladen: ${err.message}`);
+      } finally {
+        uploading--;
+        // Editor inzwischen verlassen -> mit dem fertigen Bild nachspeichern
+        if (leaving && !uploading && !deleted) (saving ?? Promise.resolve()).then(() => save());
       }
     }
   }
@@ -537,9 +549,9 @@ export async function renderEditor(root, store, id = null) {
       autosave.cancel();
       const saved = await save();
       if (saved && store.removeUpload) await store.removeUpload(block.url);
-      if (saved) status.textContent = 'Bild entfernt';
+      if (saved) setStatus('Bild entfernt');
     } else {
-      status.textContent = 'Ungespeicherte Änderungen';
+      setStatus('Ungespeicherte Änderungen');
       autosave();
     }
   }
@@ -587,7 +599,7 @@ export async function renderEditor(root, store, id = null) {
     conflictBox.hidden = true;
     if (choice === 'theirs') {
       loadVersion(current);
-      status.textContent = 'Fassung vom anderen Gerät geladen';
+      setStatus('Fassung vom anderen Gerät geladen');
     } else {
       base = revOf(current); // „Ich kenne die andere Fassung und überschreibe sie bewusst“
       await save();
@@ -617,7 +629,7 @@ export async function renderEditor(root, store, id = null) {
       showConflict(current);               // hier ungespeicherte Änderungen -> nachfragen
     } else {
       loadVersion(current);                // hier nichts geändert -> einfach übernehmen
-      status.textContent = 'Auf einem anderen Gerät geändert – neu geladen';
+      setStatus('Auf einem anderen Gerät geändert – neu geladen');
     }
   };
   window.addEventListener('data:changed', onDataChanged);
@@ -651,8 +663,35 @@ export async function renderEditor(root, store, id = null) {
     { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
   ]);
 
+  // ---------- Ganze Seite, Tastatur ----------
+  // Editor füllt genau den sichtbaren Bereich (iPhone: über der Tastatur).
+  const html = document.documentElement;
+  document.body.classList.add('is-editing');
+  const vv = window.visualViewport;
+  const fit = () => {
+    if (!vv) return;
+    html.style.setProperty('--vv-h', `${vv.height}px`);
+    html.style.setProperty('--vv-top', `${vv.offsetTop}px`);
+    updateTyping();
+  };
+  // „Tippen“-Ansicht: Textfeld hat den Fokus und es ist eng (Handy mit Tastatur)
+  const updateTyping = () => {
+    const tight = (vv?.height ?? window.innerHeight) < 560;
+    document.body.classList.toggle('is-typing', tight && document.activeElement === body);
+  };
+  vv?.addEventListener('resize', fit);
+  vv?.addEventListener('scroll', fit);
+  body.addEventListener('focus', updateTyping);
+  body.addEventListener('blur', () => setTimeout(updateTyping, 50));
+  fit();
+
   // Aufräumfunktion für den Router
   return () => {
+    vv?.removeEventListener('resize', fit);
+    vv?.removeEventListener('scroll', fit);
+    document.body.classList.remove('is-editing', 'is-typing');
+    html.style.removeProperty('--vv-h');
+    html.style.removeProperty('--vv-top');
     autosave.cancel();
     setMenuExtras([]);
     leaveSave();

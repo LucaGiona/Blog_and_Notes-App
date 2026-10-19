@@ -24,6 +24,9 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
 
 - **Schreiben** in Markdown mit Vorschau, Bildern (Drag & Drop, Einfügen, Kamera) und
   Code-Blöcken mit Kopieren-Knopf; Bilder und Code-Blöcke in der Vorschau per Papierkorb entfernen.
+- **Editor als ganze Seite:** Titel und Werkzeuge oben, Knöpfe unten, dazwischen scrollt nur der
+  Text. Auf dem Handy mit offener Tastatur bleiben nur Titel, Text und eine Knopfzeile.
+  Text ohne Titel geht beim Verlassen nicht verloren (Entwurf „Ohne Titel“).
 - **🔒 Privat / 🌐 Öffentlich** – neue Artikel sind privat. Private Artikel bekommt ein Besucher
   gar nicht zu sehen (kein Titel, kein Eintrag). Öffentliche Entwürfe zeigen nur den Titel,
   der Text ist verschwommen.
@@ -132,8 +135,10 @@ PWA braucht. Für private Nutzung kostenlos.
   3,5 s startet die App aus dem Zwischenspeicher.
 - Wurde derselbe Artikel offline auf einem Gerät und online auf einem anderen geändert,
   wird nichts überschrieben: Die Offline-Fassung landet als Entwurf „Titel (Konflikt)“ daneben.
-- **Updates** lädt die App beim nächsten Start. Kommt eine neue JS-/CSS-Datei dazu: in
-  `SHELL_FILES` in `sw.js` eintragen und `VERSION` erhöhen.
+- **Schneller Start:** App-Dateien kommen sofort aus dem Speicher des Geräts, Artikel zuerst
+  aus dem Netz. **Updates** kommen über `VERSION` in `sw.js`: Nach jeder Änderung an
+  HTML/CSS/JS `VERSION` erhöhen – die App lädt die neue Fassung im Hintergrund und lädt sich
+  einmal selbst neu. Eine neue JS-/CSS-Datei zusätzlich in `SHELL_FILES` eintragen.
 
 ### Schreiben
 
@@ -194,8 +199,8 @@ echo /pfad/zur/website > data/homepage-path
 
 Dann exportiert der Server bei **Veröffentlichen/Aktualisieren**, beim **Umschalten
 Privat ↔ Öffentlich** und beim **Löschen**, committet **nur `blog-data/`** und macht `git push`.
-Autosave löst nichts aus; offline wird es vorgemerkt. Im Footer stehen Stand und Fehler,
-dazu ein Knopf „Homepage aktualisieren“.
+Autosave löst nichts aus; offline wird es vorgemerkt. Im Footer (auf dem Handy im Burger-Menü
+unter „Status“) stehen Stand und Fehler, dazu ein Knopf „Homepage aktualisieren“.
 
 - Gepusht wird der gerade ausgecheckte Branch – samt anderer, noch nicht gepushter Commits.
 - git fragt nie nach einem Passwort; Pushen muss auf dem Rechner also schon ohne Rückfrage gehen.
@@ -254,7 +259,7 @@ dazu `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | GET | api/me | angemeldet? |
 | GET | api/posts | alle Artikel (Gäste: ohne private, Entwürfe ohne Text) |
 | GET | api/posts/:id | ein Artikel (Gäste: nur veröffentlichte, nicht private) |
-| POST | api/posts | neuer Artikel 🔒 `{title, body, status, tags[], private}` – ohne `private`: privat |
+| POST | api/posts | neuer Artikel 🔒 `{title, body, status, tags[], private, createdAt?}` – ohne `private`: privat; `createdAt` = Schreibzeit (offline geschrieben) |
 | PUT | api/posts/:id | ändern 🔒 – `baseUpdatedAt` = bekannter `rev`; veraltet → 409 + `current` |
 | DELETE | api/posts/:id | löschen 🔒 |
 | POST | api/tags | Thema umbenennen `{from, to}` / löschen `{from, to: null}` 🔒 |
@@ -307,6 +312,9 @@ No framework, no build step, no dependencies. The user interface is in German.
 
 - **Write** in Markdown with preview, images (drag & drop, paste, camera) and
   code blocks with a copy button; remove images and code blocks in the preview via the trash icon.
+- **Full-page editor:** title and tools at the top, buttons at the bottom, only the text scrolls
+  in between. On a phone with the keyboard open, only title, text and one row of buttons remain.
+  Text without a title is not lost when leaving (draft “Ohne Titel”).
 - **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private posts
   (no title, no entry). Public drafts show only the title; the text is blurred.
 - **Topics** (tags), freely combinable, with a filter; rename or delete across all posts.
@@ -413,8 +421,10 @@ server, and `tailscale serve` provides the HTTPS a PWA needs. Free for personal 
   3.5 s the app starts from its cache.
 - If the same post was changed offline on one device and online on another, nothing is
   overwritten: the offline version is saved next to it as a draft “Title (Konflikt)”.
-- The app loads **updates** on the next start. If you add a new JS/CSS file, list it in
-  `SHELL_FILES` in `sw.js` and increase `VERSION`.
+- **Fast start:** app files come straight from the device's cache, posts from the network
+  first. **Updates** come via `VERSION` in `sw.js`: after every change to HTML/CSS/JS,
+  increase `VERSION` – the app fetches the new version in the background and reloads itself
+  once. A new JS/CSS file also goes into `SHELL_FILES`.
 
 ### Writing
 
@@ -475,8 +485,8 @@ echo /path/to/website > data/homepage-path
 
 The server then exports on **publish/update**, on **switching private ↔ public** and on
 **delete**, commits **only `blog-data/`** and runs `git push`.
-Autosave triggers nothing; offline, the publish is queued. The footer shows status and
-errors, plus a “Homepage aktualisieren” (update homepage) button.
+Autosave triggers nothing; offline, the publish is queued. The footer (on phones: burger menu →
+“Status”) shows status and errors, plus a “Homepage aktualisieren” (update homepage) button.
 
 - The branch that is currently checked out is pushed – including other commits not yet pushed.
 - git never asks for a password, so pushing must already work without a prompt on the computer.
@@ -535,7 +545,7 @@ plus `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | GET | api/me | signed in? |
 | GET | api/posts | all posts (guests: without private ones, drafts without text) |
 | GET | api/posts/:id | one post (guests: published and non-private only) |
-| POST | api/posts | new post 🔒 `{title, body, status, tags[], private}` – without `private`: private |
+| POST | api/posts | new post 🔒 `{title, body, status, tags[], private, createdAt?}` – without `private`: private; `createdAt` = time written (offline) |
 | PUT | api/posts/:id | update 🔒 – `baseUpdatedAt` = known `rev`; outdated → 409 + `current` |
 | DELETE | api/posts/:id | delete 🔒 |
 | POST | api/tags | rename topic `{from, to}` / delete `{from, to: null}` 🔒 |

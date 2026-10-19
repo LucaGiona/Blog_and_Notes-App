@@ -1,17 +1,21 @@
 // Service Worker – macht den Blog zur PWA.
 //
 // Er sitzt zwischen App und Netz und entscheidet bei jeder Anfrage:
-//   App-Dateien (HTML, CSS, JS, Schriften)  -> erst Netz, sonst Zwischenspeicher
+//   App-Dateien (HTML, CSS, JS, Schriften)  -> sofort aus dem Zwischenspeicher (schneller Start)
 //   Artikel (GET api/posts…)                -> erst Netz, sonst Zwischenspeicher
 //   Bilder (uploads/…)                      -> erst Zwischenspeicher (ändern sich nie)
 //   Login, Status, alles Schreibende        -> immer direkt ans Netz, nie speichern
 //
-// „Erst Netz“ heißt: Online siehst du immer den neuesten Stand (auch beim Entwickeln),
-// offline die zuletzt geladene Version.
+// „Erst Netz“ heißt: Online siehst du immer den neuesten Artikel-Stand, offline den zuletzt geladenen.
+// App-Dateien kommen dagegen sofort aus dem Speicher – sonst müsste die App bei jedem Start
+// erst alle Dateien über Tailscale vom Mac holen. Neue Versionen kommen NUR über VERSION:
+// Der Browser prüft sw.js bei jedem Start, installiert die neue Version im Hintergrund,
+// und die App lädt sich dann einmal selbst neu (siehe main.js).
+// Ohne VERSION zu erhöhen, sieht man Änderungen an App-Dateien also nicht!
 //
 // Wichtig: Bei Änderungen an der Liste unten VERSION erhöhen.
 
-const VERSION = 'v21';
+const VERSION = 'v22';
 const SHELL = `notizblog-shell-${VERSION}`;
 const API = 'notizblog-api';      // Artikel – wird beim Abmelden gelöscht
 const IMAGES = 'notizblog-img';
@@ -68,7 +72,7 @@ const SHELL_FILES = [
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(SHELL).then(cache => cache.addAll(SHELL_FILES)).then(() => self.skipWaiting()),
+    caches.open(SHELL).then(cache => cache.addAll(SHELL_FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()),
   );
 });
 
@@ -106,7 +110,7 @@ self.addEventListener('fetch', event => {
   if (path.startsWith('api/')) return;
 
   // App-Dateien. Navigation (z. B. Start der PWA) immer auf index.html abbilden
-  event.respondWith(networkFirst(req.mode === 'navigate' ? new Request('./') : req, SHELL, true));
+  event.respondWith(cacheFirst(req.mode === 'navigate' ? new Request('./') : req, SHELL));
 });
 
 async function networkFirst(req, cacheName, store) {
@@ -152,9 +156,12 @@ function markCached(cached) {
   return new Response(cached.body, { status: cached.status, statusText: cached.statusText, headers });
 }
 
+// Gespeicherte Version, sonst Netz (und dann speichern).
+// Ohne Hintergrund-Abfragen: Die würden beim Start die wenigen Verbindungen zum Server
+// belegen, und Anmeldestatus und Artikel müssten warten.
 async function cacheFirst(req, cacheName) {
   const cache = await caches.open(cacheName);
-  const cached = await cache.match(req);
+  const cached = await cache.match(req, { ignoreVary: true });
   if (cached) return cached;
   try {
     const res = await fetch(req);

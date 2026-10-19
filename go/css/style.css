@@ -96,9 +96,15 @@ a { color: inherit; }
   font-family: var(--display);
   font-size: 1.5rem;
   font-weight: 800;
+  line-height: 1.15;
   text-decoration: none;
   letter-spacing: -.02em;
+  /* Logo mit Rahmen */
+  padding: .1em .4em .15em;
+  border: 2px solid currentColor;
+  border-radius: 8px;
 }
+.brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .site-footer {
   font-family: var(--mono);
@@ -185,9 +191,33 @@ a { color: inherit; }
   }
   .nav-extra .btn { font-family: var(--mono); font-size: .9rem; }
 }
-/* Am Laptop stehen Bild/Block auf der Seite – im Menü nicht nötig */
+/* Am Laptop stehen Bild/Block auf der Seite und der Status im Footer – im Menü nicht nötig */
 @media (min-width: 601px) {
-  .nav-extra { display: none; }
+  .nav-extra,
+  .nav-status { display: none; }
+}
+/* Handy: Status im Burger-Menü statt im Footer */
+@media (max-width: 600px) {
+  body.logged-in .site-footer { display: none; }
+  .nav-status {
+    display: grid;
+    gap: .5rem;
+    margin-top: .25rem;
+    padding-top: .75rem;
+    border-top: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: .8rem;
+    color: var(--muted);
+  }
+  .nav-status-title { margin: 0; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
+  .nav-status ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
+  .nav-status li::before { content: "· "; }
+  .nav-status li.is-ok::before { content: "● "; color: var(--published); }
+  .nav-status li.is-off::before { content: "○ "; color: var(--accent); }
+  .nav-status li.is-error { color: var(--accent); }
+  .nav-status .btn { font-family: var(--mono); font-size: .85rem; }
+  .nav-status .nav-danger { justify-self: center; font-size: .75rem; color: var(--accent); margin-top: .25rem; }
+  .nav-status .nav-danger::before { content: none; }
 }
 
 @media (max-width: 600px) and (prefers-reduced-motion: no-preference) {
@@ -305,8 +335,6 @@ a { color: inherit; }
 /* Unten, immer gleich (Handy und Desktop):
    Hinweis · Status · Löschen links, Zwischenspeichern rechts · darunter breit Veröffentlichen/Aktualisieren */
 .toolbar {
-  position: sticky;
-  bottom: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-areas:
@@ -327,8 +355,17 @@ a { color: inherit; }
 .toolbar [data-action="delete"] { grid-area: delete; justify-self: start; }
 .toolbar [data-action="draft"] { grid-area: draft; justify-self: end; }
 .toolbar [type="submit"] { grid-area: submit; width: 100%; justify-content: center; }
-.toolbar .save-status:empty { display: none; }
-.save-status { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+.save-status {
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--muted);
+  /* immer genau eine Zeile – sonst springen die Knöpfe, wenn der Text wechselt */
+  min-height: 1.2em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* Fehlermeldungen im Editor – wie ein Hinweis an einem Eingabefeld */
 .field { display: grid; gap: .4rem; }
@@ -883,6 +920,77 @@ body:has(.timeline) .site-header {
 @media (max-width: 600px) {
   .privacy-toggle { font-size: .8rem; padding: .5rem .85rem; }
   .scope-filter button { font-size: .78rem; padding: .45rem .85rem; }
+}
+
+/* ---------- Editor als ganze Seite ----------
+   Oben fest: Kopf, Titel, Themen, Leiste. Unten fest: Status + Knöpfe.
+   Dazwischen scrollt nur das Textfeld selbst -> der Cursor kann nicht mehr hinter
+   einer Leiste verschwinden, kein zweiter Scrollbalken, kein Footer.
+   --vv-h/--vv-top setzt der Editor aus visualViewport: Auf dem iPhone ist das der
+   Bereich ÜBER der Tastatur. */
+body.is-editing {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--vv-top, 0px);
+  height: var(--vv-h, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+body.is-editing .site-footer { display: none; }
+body.is-editing #app {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 1rem;
+  padding-bottom: 0;
+}
+body.is-editing .editor { display: flex; flex-direction: column; gap: .75rem; flex: 1; min-height: 0; }
+body.is-editing .editor > * { flex: none; }
+body.is-editing .editor-body,
+body.is-editing .editor-preview {
+  flex: 1 1 auto;
+  min-height: 4rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.is-editing .toolbar { padding: .5rem 0 calc(.6rem + env(safe-area-inset-bottom)); }
+body.is-editing .toolbar .btn { padding: .55rem 1rem; }
+
+/* Beim Tippen auf kleinen Bildschirmen (Tastatur offen): alles Unwichtige weg,
+   damit möglichst viel Text sichtbar ist. Titel bleibt, Knöpfe in einer Zeile. */
+body.is-typing .site-header,
+body.is-typing .tag-picker,
+body.is-typing .format-bar,
+body.is-typing .md-hint { display: none; }
+body.is-typing #app { padding-top: .5rem; }
+body.is-typing .editor { gap: .4rem; }
+body.is-typing .editor-title { font-size: 1.25rem; padding: 0; }
+body.is-typing .title-field .privacy-toggle { font-size: .7rem; padding: .3rem .6rem; }
+body.is-typing .toolbar {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "alert alert alert"
+    "status draft submit";
+  padding: .35rem 0 .4rem;
+}
+body.is-typing .toolbar [data-action="delete"] { display: none; }
+body.is-typing .toolbar [type="submit"] { width: auto; }
+body.is-typing .toolbar .btn { padding: .45rem .8rem; font-size: .85rem; }
+
+/* Handy: Themen in einer Zeile zum Wischen statt mehrerer Zeilen */
+@media (max-width: 600px) {
+  body.is-editing .tag-picker {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+  body.is-editing .tag-picker::-webkit-scrollbar { display: none; }
+  body.is-editing .tag-picker > * { flex: none; }
+  body.is-editing .tag-options { display: flex; flex-wrap: nowrap; gap: .4rem; }
 }
 
 /* Anmeldeseite: Hinweis, solange noch kein Benutzer angelegt ist */

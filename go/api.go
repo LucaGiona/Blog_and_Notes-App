@@ -120,7 +120,7 @@ func route(w http.ResponseWriter, r *http.Request) {
 		}
 		if method == "POST" {
 			requireAuth(r)
-			in, _ := readInput(r)
+			in, _ := readInput(r, true)
 			// Neue Artikel sind privat, wenn nichts anderes gesagt wird
 			if _, ok := in["private"]; !ok {
 				in["private"] = true
@@ -141,7 +141,7 @@ func route(w http.ResponseWriter, r *http.Request) {
 			reply(200, post)
 		case "PUT":
 			requireAuth(r)
-			in, base := readInput(r)
+			in, base := readInput(r, false)
 			post, err := store.Update(id, in, base)
 			if c, ok := err.(conflictError); ok {
 				reply(409, map[string]any{"error": "Auf einem anderen Gerät geändert", "current": c.current})

@@ -23,8 +23,8 @@ export function setMenuExtras(items) {
   if (last) renderNav(...last);
 }
 
-export function renderNav(nav, { onLogout }) {
-  last = [nav, { onLogout }];
+export function renderNav(nav, { onLogout, onRender }) {
+  last = [nav, { onLogout, onRender }];
   closeMenu();
 
   const items = [];
@@ -44,6 +44,7 @@ export function renderNav(nav, { onLogout }) {
       <div class="nav-extra">${extras.map((x, i) =>
         `<button type="button" class="btn" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
       ${items.join('')}
+      ${auth.loggedIn && !auth.local ? '<div class="nav-status" id="nav-status" aria-live="polite"></div>' : ''}
     </div>`;
 
   const toggle = nav.querySelector('.nav-toggle');
@@ -64,6 +65,7 @@ export function renderNav(nav, { onLogout }) {
     if (e.target.closest('a, button')) closeMenu();
   });
   nav.querySelector('[data-action="logout"]')?.addEventListener('click', onLogout);
+  onRender?.(); // z. B. Status-Bereich füllen (main.js)
   nav.querySelector('.nav-extra')?.addEventListener('click', e => {
     const btn = e.target.closest('[data-extra]');
     if (btn) extras[btn.dataset.extra]?.onClick();

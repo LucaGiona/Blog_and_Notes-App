@@ -95,7 +95,7 @@ try {
         if ($method === 'POST') {
             $auth->require();
             // Neue Artikel sind privat, wenn nichts anderes gesagt wird
-            json(201, $store->create(readInput() + ['private' => true]));
+            json(201, $store->create(readInput($base, true) + ['private' => true]));
         }
     }
 

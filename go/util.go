@@ -85,7 +85,7 @@ func isTrue(in map[string]json.RawMessage, key string) bool {
 
 // Nur erlaubte Felder für Artikel übernehmen (wie readInput() in PHP).
 // base = mitgeschickter Stand (baseUpdatedAt) für den Konfliktschutz.
-func readInput(r *http.Request) (map[string]any, *string) {
+func readInput(r *http.Request, isNew bool) (map[string]any, *string) {
 	in := readJSONBody(r, maxBodyBytes)
 	var base *string
 	if raw, ok := in["baseUpdatedAt"]; ok {
@@ -112,7 +112,32 @@ func readInput(r *http.Request) (map[string]any, *string) {
 	if _, ok := in["private"]; ok {
 		out["private"] = isTrue(in, "private")
 	}
+	// Neuer Artikel, offline geschrieben: Schreibzeit vom Gerät übernehmen (statt Ankunftszeit)
+	if isNew {
+		if written := clientTime(str(in, "createdAt")); written != "" {
+			out["createdAt"] = written
+		}
+	}
 	return out, base
+}
+
+var isoTime = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$`)
+
+// Zeitangabe vom Gerät prüfen: ISO-Format, nicht in der Zukunft (5 Min. Spielraum
+// für falsch gehende Uhren), höchstens ein Jahr alt. Sonst "".
+func clientTime(value string) string {
+	if !isoTime.MatchString(value) {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return ""
+	}
+	now := time.Now()
+	if t.After(now.Add(5*time.Minute)) || t.Before(now.Add(-366*24*time.Hour)) {
+		return ""
+	}
+	return t.UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
 var spaces = regexp.MustCompile(`\s+`)

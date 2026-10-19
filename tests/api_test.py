@@ -226,6 +226,19 @@ if HOMEPAGE:
              lambda p: [x['title'] for x in p] == ['Zwei', 'Drei'] and p[1]['body'] == '')
     step('Homepage: Status gemerkt', *call(owner, 'GET', '/api/homepage')[:2], 200, lambda p: p['last']['ok'] is True)
 
+# ---------- Schreibzeit offline geschriebener Artikel ----------
+from datetime import datetime, timedelta, timezone
+iso = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.') + f'{t.microsecond // 1000:03d}Z'
+earlier = iso(datetime.now(timezone.utc) - timedelta(hours=2))
+o = step('Schreibzeit vom Gerät übernommen', *call(owner, 'POST', '/api/posts', {'title': 'Offline', 'createdAt': earlier})[:2], 201,
+         lambda p: p['createdAt'] == earlier and p['updatedAt'] != earlier)
+f = step('Zeit in der Zukunft ignoriert', *call(owner, 'POST', '/api/posts', {'title': 'Zukunft', 'createdAt': '2099-01-01T00:00:00.000Z'})[:2], 201,
+         lambda p: p['createdAt'] != '2099-01-01T00:00:00.000Z')
+step('Ändern ändert die Schreibzeit nicht', *call(owner, 'PUT', f"/api/posts/{o['id']}", {'title': 'Offline', 'createdAt': iso(datetime.now(timezone.utc) - timedelta(days=3))})[:2], 200,
+     lambda p: p['createdAt'] == earlier)
+for x in (o, f):
+    call(owner, 'DELETE', f"/api/posts/{x['id']}")
+
 # ---------- Löschen, Abmelden ----------
 step('Artikel löschen', *call(owner, 'DELETE', f"/api/posts/{c['id']}")[:2], 204)
 step('nochmal löschen -> 404', *call(owner, 'DELETE', f"/api/posts/{c['id']}")[:2], 404)

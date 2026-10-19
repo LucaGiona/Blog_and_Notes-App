@@ -52,7 +52,7 @@ function readJsonBody(int $maxBytes): array
 
 // Nur erlaubte Felder für Artikel übernehmen.
 // $base bekommt den mitgeschickten Stand (baseUpdatedAt) für den Konfliktschutz.
-function readInput(?string &$base = null): array
+function readInput(?string &$base = null, bool $isNew = false): array
 {
     $in = readJsonBody(MAX_BODY_BYTES);
     $base = isset($in['baseUpdatedAt']) && is_string($in['baseUpdatedAt']) ? $in['baseUpdatedAt'] : null;
@@ -72,7 +72,32 @@ function readInput(?string &$base = null): array
     if (array_key_exists('private', $in)) {
         $out['private'] = $in['private'] === true;
     }
+    // Neuer Artikel, offline geschrieben: Schreibzeit vom Gerät übernehmen (statt Ankunftszeit)
+    if ($isNew && ($written = clientTime($in['createdAt'] ?? null))) {
+        $out['createdAt'] = $written;
+    }
     return $out;
+}
+
+/**
+ * Zeitangabe vom Gerät prüfen: ISO-Format, nicht in der Zukunft (5 Min. Spielraum
+ * für falsch gehende Uhren), höchstens ein Jahr alt. Sonst null.
+ */
+function clientTime(mixed $value): ?string
+{
+    if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/', $value)) {
+        return null;
+    }
+    try {
+        $t = new DateTimeImmutable($value);
+    } catch (Exception) {
+        return null;
+    }
+    $ts = $t->getTimestamp();
+    if ($ts > time() + 300 || $ts < time() - 366 * 86400) {
+        return null;
+    }
+    return $t->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
 }
 
 /** Neue Kennung für den Stand eines Artikels */

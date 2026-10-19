@@ -8,6 +8,7 @@ import { sync, lastSyncError } from './storage/sync.js';
 import { count as outboxCount } from './outbox.js';
 import { auth } from './auth.js';
 import { homepage, loadHomepageStatus, requestPublish, flushPublish, homepageLabel } from './homepage.js';
+import { escapeHtml } from './utils.js';
 import { renderNav } from './nav.js';
 import { createRouter } from './router.js';
 import { renderList } from './views/list.js';
@@ -34,16 +35,35 @@ const isInstalledApp =
 // Service Worker nur über https oder localhost möglich (Browser-Regel)
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker:', err));
+  // Neue App-Version installiert -> einmal neu laden, damit sie sofort gilt.
+  // Nicht mitten im Schreiben: im Editor erst beim nächsten Seitenwechsel.
+  const hadController = !!navigator.serviceWorker.controller;
+  let updateReady = false;
+  const reloadIfSafe = () => {
+    if (updateReady && !/^#\/(new|edit\/)/.test(location.hash)) location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController) return; // erster Besuch: nichts neu zu laden
+    updateReady = true;
+    reloadIfSafe();
+  });
+  // kurz warten, damit das Speichern beim Verlassen des Editors noch durchkommt
+  window.addEventListener('hashchange', () => setTimeout(reloadIfSafe, 2000));
 }
 
 // ---------- Start ----------
+// Server-Check und Anmeldestatus GLEICHZEITIG fragen – nacheinander kostet über
+// Tailscale spürbar Zeit beim Start
+const authReady = auth.refresh();
 const store = await createStore(); // Top-level await geht nur in Modulen
+await authReady;
 if (store === localStore) auth.useLocal();
-else if (!connection.online) auth.assumeOffline(); // Server antwortet nicht -> nicht nochmal warten
-else await auth.refresh();
+else if (!connection.online) auth.assumeOffline(); // Server antwortet nicht
 
 function updateNav() {
-  renderNav(nav, { onLogout: logout });
+  renderNav(nav, { onLogout: logout, onRender: renderMenuStatus });
+  // Handy: Footer-Infos stehen im Burger-Menü (siehe renderMenuStatus) – Footer ausblenden
+  document.body.classList.toggle('logged-in', auth.loggedIn && !auth.local);
   logoutAllButton.hidden = !auth.loggedIn || auth.local;
   loginLink.hidden = auth.loggedIn || auth.local || !isInstalledApp;
   updateHomepage();
@@ -57,6 +77,7 @@ function updateHomepage() {
   homepageStatus.textContent = homepageLabel();
   homepageStatus.classList.toggle('is-error', homepage.last?.ok === false);
   homepagePublish.disabled = homepage.busy;
+  renderMenuStatus();
 }
 homepagePublish.addEventListener('click', () => requestPublish());
 window.addEventListener('homepage:change', updateHomepage);
@@ -102,7 +123,36 @@ async function updateStatus() {
   syncStatus.textContent =
     lastSyncError ? ` · ${lastSyncError}` :
     waiting ? ` · ${waiting} Änderung(en) warten auf Verbindung` : '';
+  menuWaiting = waiting;
+  renderMenuStatus();
 }
+
+// ---------- Status im Burger-Menü (Handy) ----------
+// Dieselben Infos wie im Footer, nur auf Abruf: Burger öffnen -> „Status“.
+let menuWaiting = 0;
+function renderMenuStatus() {
+  const box = document.getElementById('nav-status');
+  if (!box) return;
+  const lines = [
+    `<li class="${connection.online ? 'is-ok' : 'is-off'}">${connection.online ? 'Online' : 'Offline – Server nicht erreichbar'}</li>`,
+  ];
+  if (lastSyncError) lines.push(`<li class="is-error">${escapeHtml(lastSyncError)}</li>`);
+  else if (menuWaiting) lines.push(`<li>${menuWaiting} Änderung(en) warten auf Verbindung</li>`);
+  else lines.push('<li>Alles synchronisiert</li>');
+  if (homepage.configured) {
+    lines.push(`<li class="${homepage.last?.ok === false ? 'is-error' : ''}">${escapeHtml(homepageLabel())}</li>`);
+  }
+  box.innerHTML = `
+    <p class="nav-status-title">Status</p>
+    <ul>${lines.join('')}</ul>
+    ${homepage.configured ? `<button type="button" class="btn" data-menu="publish" ${homepage.busy ? 'disabled' : ''}>Homepage aktualisieren</button>` : ''}
+    <button type="button" class="link-button nav-danger" data-menu="logout-all">Alle Geräte abmelden</button>`;
+}
+nav.addEventListener('click', e => {
+  const action = e.target.closest('[data-menu]')?.dataset.menu;
+  if (action === 'publish') requestPublish();
+  if (action === 'logout-all') logoutAllButton.click(); // gleiche Rückfrage wie im Footer
+});
 
 // ---------- Routen ----------
 // Seiten, die nur mit Login erreichbar sind

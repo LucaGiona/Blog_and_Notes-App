@@ -210,7 +210,8 @@ async function run() {
         const { url } = await apiStore.upload(file);
         await outbox.rewriteUrl(op.tempUrl, url);
       } else if (op.type === 'create') {
-        const post = await apiStore.create(op.data);
+        // Schreibzeit mitschicken – sonst gälte die Zeit des Synchronisierens
+        const post = await apiStore.create({ ...op.data, createdAt: op.at });
         await outbox.renameId(op.id, post.id);
         window.dispatchEvent(new CustomEvent('outbox:idmap', { detail: { from: op.id, to: post.id } }));
       } else if (op.type === 'update') {
