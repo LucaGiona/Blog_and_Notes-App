@@ -2,6 +2,7 @@
 // Service Worker (PWA) registrieren, Postausgang synchronisieren.
 
 import { createStore } from './storage/index.js';
+import { syncStore } from './storage/sync.js';
 import { connection, serverStatus } from './storage/api.js';
 import { localStore } from './storage/local.js';
 import { sync, lastSyncError } from './storage/sync.js';
@@ -9,6 +10,7 @@ import { count as outboxCount } from './outbox.js';
 import { auth } from './auth.js';
 import { homepage, loadHomepageStatus, requestPublish, flushPublish, homepageLabel } from './homepage.js';
 import { escapeHtml } from './utils.js';
+import { device, isLocalDev } from './device.js';
 import { renderNav } from './nav.js';
 import { createRouter } from './router.js';
 import { renderList } from './views/list.js';
@@ -55,14 +57,26 @@ if ('serviceWorker' in navigator) {
 // Server-Check und Anmeldestatus GLEICHZEITIG fragen – nacheinander kostet über
 // Tailscale spürbar Zeit beim Start
 const authReady = auth.refresh();
-const store = await createStore(); // Top-level await geht nur in Modulen
-await authReady;
-if (store === localStore) auth.useLocal();
-else if (!connection.online) auth.assumeOffline(); // Server antwortet nicht
+const storeReady = createStore();
+
+// Eigenes Gerät, auf dem du angemeldet bist: NICHT auf den Server warten (über Tailscale
+// oder bei schlafendem Mac bis zu 3 s), sondern sofort mit dem Wissen des Geräts starten.
+// Die Antworten des Servers kommen nach und korrigieren, falls nötig (siehe serverChecked).
+const quickStart = !isLocalDev && device.trusted && !!device.lastUser;
+let store;
+if (quickStart) {
+  store = syncStore;
+  auth.assumeKnown();
+} else {
+  store = await storeReady; // Top-level await geht nur in Modulen
+  await authReady;
+  if (store === localStore) auth.useLocal();
+  else if (!connection.online) auth.assumeOffline(); // Server antwortet nicht
+}
 
 function updateNav() {
   renderNav(nav, { onLogout: logout, onRender: renderMenuStatus });
-  // Handy: Footer-Infos stehen im Burger-Menü (siehe renderMenuStatus) – Footer ausblenden
+  // Angemeldet stehen die Footer-Infos im Status-Feld (Laptop: Knopf oben, Handy: Burger) – Footer aus
   document.body.classList.toggle('logged-in', auth.loggedIn && !auth.local);
   logoutAllButton.hidden = !auth.loggedIn || auth.local;
   loginLink.hidden = auth.loggedIn || auth.local || !isInstalledApp;
@@ -127,12 +141,15 @@ async function updateStatus() {
   renderMenuStatus();
 }
 
-// ---------- Status im Burger-Menü (Handy) ----------
-// Dieselben Infos wie im Footer, nur auf Abruf: Burger öffnen -> „Status“.
+// ---------- Status-Feld (Laptop: Knopf „● Online ▾“ oben, Handy: im Burger-Menü) ----------
+// Dieselben Infos wie im Footer, dazu die Reihenfolge im Zeitstrahl. Beide Stellen
+// (data-status-box) bekommen denselben Inhalt.
 let menuWaiting = 0;
 function renderMenuStatus() {
-  const box = document.getElementById('nav-status');
-  if (!box) return;
+  updateStatusButton();
+  const boxes = document.querySelectorAll('[data-status-box]');
+  if (!boxes.length) return;
+  const by = device.sortBy;
   const lines = [
     `<li class="${connection.online ? 'is-ok' : 'is-off'}">${connection.online ? 'Online' : 'Offline – Server nicht erreichbar'}</li>`,
   ];
@@ -142,16 +159,41 @@ function renderMenuStatus() {
   if (homepage.configured) {
     lines.push(`<li class="${homepage.last?.ok === false ? 'is-error' : ''}">${escapeHtml(homepageLabel())}</li>`);
   }
-  box.innerHTML = `
+  const html = `
     <p class="nav-status-title">Status</p>
     <ul>${lines.join('')}</ul>
+    <div class="status-sort" role="group" aria-label="Reihenfolge im Zeitstrahl" data-keep-open>
+      <span>Reihenfolge</span>
+      <button type="button" data-sort="created" aria-pressed="${by === 'created'}">angelegt</button>
+      <button type="button" data-sort="updated" aria-pressed="${by === 'updated'}">bearbeitet</button>
+    </div>
     ${homepage.configured ? `<button type="button" class="btn" data-menu="publish" ${homepage.busy ? 'disabled' : ''}>Homepage aktualisieren</button>` : ''}
-    <button type="button" class="link-button nav-danger" data-menu="logout-all">Alle Geräte abmelden</button>`;
+    <button type="button" class="link-button nav-danger" data-menu="logout-all" data-close>Alle Geräte abmelden</button>`;
+  boxes.forEach(box => { box.innerHTML = html; });
 }
+
+// Knopf oben (Laptop): Punkt + kurzes Wort. Grün = online und alles da, gelb = Änderungen
+// warten, grau = Server nicht erreichbar, rot = Fehler (Synchronisieren oder Homepage).
+function updateStatusButton() {
+  const btn = nav.querySelector('.status-btn');
+  if (!btn) return;
+  const error = lastSyncError || homepage.last?.ok === false;
+  const state = !connection.online ? 'is-off' : error ? 'is-error' : menuWaiting ? 'is-wait' : 'is-ok';
+  const label = !connection.online ? 'Offline' : menuWaiting ? `${menuWaiting} warten` : 'Online';
+  btn.dataset.state = state;
+  btn.querySelector('.status-label').textContent = label;
+  btn.title = `${label} – Status und Einstellungen`;
+}
+
 nav.addEventListener('click', e => {
   const action = e.target.closest('[data-menu]')?.dataset.menu;
   if (action === 'publish') requestPublish();
   if (action === 'logout-all') logoutAllButton.click(); // gleiche Rückfrage wie im Footer
+  const sort = e.target.closest('[data-sort]')?.dataset.sort;
+  if (sort && sort !== device.sortBy) {
+    device.sortBy = sort; // löst 'sort:change' aus
+    renderMenuStatus();
+  }
 });
 
 // ---------- Routen ----------
@@ -215,6 +257,8 @@ async function backOnline() {
     if (!homepage.configured) await loadHomepageStatus();
     flushPublish();
   }
+  // Was offline aus dem Speicher kam, jetzt frisch vom Server zeigen
+  window.dispatchEvent(new Event('data:changed'));
 }
 window.addEventListener('connection:change', () => {
   updateStatus();
@@ -242,10 +286,33 @@ window.addEventListener('data:changed', () => {
   if (hash === '#/' || hash.startsWith('#/post/') || hash.startsWith('#/thema/')) router.refresh();
 });
 
+// Reihenfolge umgestellt -> Zeitstrahl neu zeichnen
+window.addEventListener('sort:change', () => {
+  const hash = location.hash || '#/';
+  if (hash === '#/' || hash.startsWith('#/thema/')) router.refresh();
+});
+
 updateNav();
 updateStatus();
 router.start();
-if (!auth.local && auth.loggedIn) {
+if (quickStart) {
+  // Antworten vom Server da: Anmeldung bestätigt? Server erreichbar?
+  Promise.all([authReady, storeReady]).then(serverChecked);
+} else if (!auth.local && auth.loggedIn) {
+  sync().then(() => flushPublish());
+  if (connection.online) loadHomepageStatus();
+}
+
+function serverChecked() {
+  if (!connection.online) auth.assumeOffline();
+  updateNav();
+  updateStatus();
+  if (!auth.loggedIn) {
+    // Anmeldung abgelaufen: Liste ohne private Artikel zeigen. Im Editor bleiben
+    // (sonst wäre ungespeicherter Text weg) – Speichern meldet dann „Nicht angemeldet“.
+    if (!/^#\/(new|edit\/)/.test(location.hash)) router.refresh();
+    return;
+  }
   sync().then(() => flushPublish());
   if (connection.online) loadHomepageStatus();
 }

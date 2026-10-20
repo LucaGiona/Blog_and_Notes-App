@@ -76,6 +76,10 @@ function readInput(?string &$base = null, bool $isNew = false): array
     if ($isNew && ($written = clientTime($in['createdAt'] ?? null))) {
         $out['createdAt'] = $written;
     }
+    // Kennung vom Gerät: Kommt dieselbe Anfrage zweimal an, wird nur EIN Artikel angelegt
+    if ($isNew && is_string($in['clientId'] ?? null) && preg_match('/^local-[A-Za-z0-9-]{1,40}$/', $in['clientId'])) {
+        $out['clientId'] = $in['clientId'];
+    }
     return $out;
 }
 

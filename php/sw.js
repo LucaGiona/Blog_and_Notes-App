@@ -3,6 +3,7 @@
 // Er sitzt zwischen App und Netz und entscheidet bei jeder Anfrage:
 //   App-Dateien (HTML, CSS, JS, Schriften)  -> sofort aus dem Zwischenspeicher (schneller Start)
 //   Artikel (GET api/posts…)                -> erst Netz, sonst Zwischenspeicher
+//                                              (die Startseite zeigt vorher schon die gespeicherte Liste)
 //   Bilder (uploads/…)                      -> erst Zwischenspeicher (ändern sich nie)
 //   Login, Status, alles Schreibende        -> immer direkt ans Netz, nie speichern
 //
@@ -15,7 +16,7 @@
 //
 // Wichtig: Bei Änderungen an der Liste unten VERSION erhöhen.
 
-const VERSION = 'v22';
+const VERSION = 'v23';
 const SHELL = `notizblog-shell-${VERSION}`;
 const API = 'notizblog-api';      // Artikel – wird beim Abmelden gelöscht
 const IMAGES = 'notizblog-img';
@@ -134,8 +135,9 @@ async function networkFirst(req, cacheName, store) {
     }
   }
 
-  // Server hat eben erst nicht geantwortet -> gar nicht warten
-  if (Date.now() < offlineUntil) return markCached(cached);
+  // Server hat eben erst nicht geantwortet (oder die App weiß schon: offline) -> gar nicht warten.
+  // Das Netz wird trotzdem gefragt und der Zwischenspeicher aktualisiert, sobald es antwortet.
+  if (Date.now() < offlineUntil || req.headers.get('X-Notizblog-Offline') === '1') return markCached(cached);
 
   // Gespeicherte Version vorhanden -> höchstens NETWORK_TIMEOUT aufs Netz warten
   const timeout = new Promise(resolve => setTimeout(() => resolve(null), NETWORK_TIMEOUT));

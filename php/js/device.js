@@ -2,6 +2,7 @@
 //
 // trusted      = beim Login „Auf diesem Gerät angemeldet bleiben“ angehakt.
 //                Nur dann darf offline geschrieben werden (Postausgang).
+// sortBy       = Reihenfolge im Zeitstrahl: angelegt (Standard) oder zuletzt bearbeitet.
 // shortSession = angemeldet OHNE Haken (fremdes Gerät): Artikeltexte
 //                werden dann nicht für offline zwischengespeichert.
 // lastUser     = wer zuletzt angemeldet war – damit die App auf eigenen
@@ -14,6 +15,7 @@ const KEYS = {
   trusted: 'notizblog.trusted',
   shortSession: 'notizblog.shortSession',
   lastUser: 'notizblog.user',
+  sortBy: 'notizblog.sortBy',
 };
 
 function read(key) {
@@ -35,6 +37,13 @@ export const device = {
 
   get lastUser() { return read(KEYS.lastUser); },
   set lastUser(name) { write(KEYS.lastUser, name || null); },
+
+  // Reihenfolge im Zeitstrahl: 'created' = wann angelegt (Standard), 'updated' = zuletzt bearbeitet
+  get sortBy() { return read(KEYS.sortBy) === 'updated' ? 'updated' : 'created'; },
+  set sortBy(value) {
+    write(KEYS.sortBy, value === 'updated' ? 'updated' : null);
+    window.dispatchEvent(new Event('sort:change'));
+  },
 };
 
 // Lokale Entwicklung (Live Server, php -S): nur hier ist der Browser-Speicher

@@ -45,6 +45,15 @@ func (s Store) Get(id string) Post {
 func (s Store) Create(in Post) Post {
 	var post Post
 	s.withLock(syscall.LOCK_EX, func(posts []Post) []Post {
+		// Gleiche Kennung vom Gerät schon angelegt (Anfrage kam doppelt) -> den nehmen
+		if id, ok := in["clientId"].(string); ok {
+			for _, p := range posts {
+				if p["clientId"] == id {
+					post = p
+					return nil
+				}
+			}
+		}
 		now := timestamp()
 		post = Post{"id": uuid4(), "createdAt": now, "updatedAt": now, "rev": newRev()}
 		for k, v := range in {

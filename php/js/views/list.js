@@ -2,7 +2,8 @@
 // Für Gäste schickt der Server bei Entwürfen gar keinen Text (locked) –
 // dann wird ein Platzhalter verschwommen angezeigt.
 
-import { escapeHtml, formatDate, excerpt } from '../utils.js';
+import { escapeHtml, formatDate, formatDateTime, excerpt, sortTime, sameMinute } from '../utils.js';
+import { device } from '../device.js';
 import { plainText } from '../markdown.js';
 import { collectTags, tagLinks, sameTag } from '../tags.js';
 import { revealOnScroll } from '../reveal.js';
@@ -14,8 +15,24 @@ const PLACEHOLDER =
 // activeTag: nur Artikel mit diesem Thema zeigen (Route #/thema/…)
 export async function renderList(root, store, auth, activeTag = null) {
   let posts;
+  let alive = true; // false, sobald die Seite gewechselt wurde
+  // Sofort zeigen, was auf dem Gerät gespeichert ist; die frische Liste kommt im
+  // Hintergrund und wird nur neu gezeichnet, wenn sich etwas geändert hat.
+  // (Über Tailscale oder bei schlafendem Mac dauert die Antwort sonst spürbar.)
+  const live = store.list();
+  live.catch(() => {}); // Fehler wird unten behandelt
+  const cached = store.cachedList && !root.querySelector('.timeline') ? await store.cachedList() : null;
   try {
-    posts = (await store.list()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (cached?.length) {
+      posts = cached;
+      live.then(fresh => {
+        if (!alive || stamp(fresh) === stamp(posts)) return;
+        posts = fresh;
+        draw(false);
+      }).catch(() => {}); // kein Netz -> gespeicherte Liste bleibt stehen
+    } else {
+      posts = await live;
+    }
   } catch (err) {
     root.innerHTML = `
       <div class="empty">
@@ -39,10 +56,14 @@ export async function renderList(root, store, auth, activeTag = null) {
   // -> nicht nochmal einblenden
   let stopLine = null;
   draw(!root.querySelector('.timeline'));
-  return () => stopLine?.(); // Aufräumen, wenn die Seite gewechselt wird
+  return () => { alive = false; stopLine?.(); }; // Aufräumen, wenn die Seite gewechselt wird
 
   function draw(animate) {
     stopLine?.();
+
+    // Reihenfolge: wann angelegt (Standard) oder zuletzt bearbeitet – einstellbar im Status-Menü
+    const by = device.sortBy;
+    posts.sort((a, b) => sortTime(b, by).localeCompare(sortTime(a, by)));
 
     // Nur angemeldet: Alle / Öffentlich / Privat (Besucher bekommen private Artikel gar nicht)
     const view = auth.canEdit ? scope : 'all'; // nach dem Abmelden nicht versehentlich weiterfiltern
@@ -73,7 +94,7 @@ export async function renderList(root, store, auth, activeTag = null) {
       <div class="tl-item ${i % 2 ? 'tl-right' : 'tl-left'}">
         <span class="tl-dot" aria-hidden="true"></span>
         <div class="tl-meta">
-          <time datetime="${p.updatedAt}">${formatDate(p.updatedAt)}</time>
+          <time datetime="${sortTime(p, by)}" title="${timesTitle(p)}">${formatDate(sortTime(p, by))}</time>
           <div class="tl-flags">
             ${p.private ? '<span class="badge badge-private" title="Nur für dich sichtbar">🔒 Privat</span>' : ''}
             ${p.status === 'draft'
@@ -108,6 +129,16 @@ export async function renderList(root, store, auth, activeTag = null) {
     if (animate) revealOnScroll(root.querySelectorAll('.tl-item'));
     stopLine = growLine(root.querySelector('.timeline'));
   }
+}
+
+// Kurzer Fingerabdruck einer Liste: Hat sich etwas geändert?
+const stamp = list => list.map(p => `${p.id}:${p.rev ?? p.updatedAt}:${p.pending ? 1 : 0}`).sort().join('|');
+
+// Tooltip am Datum: „angelegt 20.10.2026, 09:17 · bearbeitet 20.10.2026, 13:02“
+function timesTitle(p) {
+  const created = p.createdAt ? `angelegt ${formatDateTime(p.createdAt)}` : '';
+  const updated = p.updatedAt && !sameMinute(p.createdAt, p.updatedAt) ? `bearbeitet ${formatDateTime(p.updatedAt)}` : '';
+  return [created, updated].filter(Boolean).join(' · ');
 }
 
 // Gewählte Sichtbarkeit (Alle / Öffentlich / Privat) – bleibt beim Seitenwechsel erhalten

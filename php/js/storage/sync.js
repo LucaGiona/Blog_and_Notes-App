@@ -49,9 +49,32 @@ async function list() {
   return applyOps(posts, ops);
 }
 
+/**
+ * Die zuletzt geladene Artikelliste direkt aus dem Zwischenspeicher des Geräts –
+ * ohne aufs Netz zu warten. Damit zeigt die Startseite sofort etwas, während die
+ * frische Liste im Hintergrund kommt. null, wenn nichts gespeichert ist.
+ */
+async function cachedList() {
+  if (device.shortSession || !('caches' in window)) return null;
+  try {
+    const cache = await caches.open('notizblog-api');
+    const res = await cache.match(new URL('api/posts', location.href).href, { ignoreVary: true });
+    if (!res) return null;
+    return applyOps(await res.json(), await outbox.all());
+  } catch {
+    return null;
+  }
+}
+
 async function get(id) {
   id = outbox.translateId(id);
   if (id.startsWith('local-')) return (await list()).find(p => p.id === id) ?? null;
+  // Schon bekannt, dass der Server nicht antwortet: gleich aus der gespeicherten Liste
+  // nehmen statt 10 s auf eine Zeitüberschreitung zu warten
+  if (!connection.online) {
+    const known = (await list().catch(() => [])).find(p => p.id === id);
+    if (known) return known;
+  }
 
   let post;
   try {
@@ -109,11 +132,15 @@ async function queueSave(id, data) {
   return { ...(await get(id)), ...data, id, updatedAt: at, pending: true };
 }
 
+// Jeder neue Artikel bekommt sofort eine Kennung vom Gerät (clientId). Der Server legt
+// zu einer Kennung nur EINEN Artikel an – kommt dieselbe Anfrage zweimal an (Antwort ging
+// verloren, Zeitgrenze abgelaufen, zwei Fenster synchronisieren gleichzeitig), bekommt
+// man den schon angelegten Artikel zurück statt eines Doppelten.
 async function create(data) {
+  const id = 'local-' + randomId();
   return directOrQueue(
-    () => apiStore.create(data),
+    () => apiStore.create({ ...data, clientId: id }),
     async () => {
-      const id = 'local-' + randomId();
       const at = nowIso();
       await outbox.add({ type: 'create', id, data, at });
       notify();
@@ -189,14 +216,26 @@ async function renameTag(from, to) {
 let running = null;
 export let lastSyncError = null;
 
-// Mehrfachaufrufe teilen sich einen Durchlauf
+// Mehrfachaufrufe teilen sich einen Durchlauf. Dazu eine Sperre über alle Fenster
+// hinweg (App und Browser-Tab teilen sich denselben Postausgang): Sonst schicken zwei
+// Fenster dieselbe Änderung gleichzeitig ab.
 export function sync() {
-  running ??= run().finally(() => {
+  running ??= withSyncLock(run).finally(() => {
     running = null;
     notify();
   });
   return running;
 }
+
+function withSyncLock(fn) {
+  if (!navigator.locks) return fn(); // ältere Browser: wie bisher
+  return navigator.locks.request('notizblog-sync', fn);
+}
+
+const sameContent = (a, b) => !!a
+  && a.title === b.title && a.body === b.body
+  && JSON.stringify(a.tags ?? []) === JSON.stringify(b.tags ?? a.tags ?? [])
+  && (b.private === undefined || !!a.private === !!b.private);
 
 async function run() {
   lastSyncError = null;
@@ -211,7 +250,7 @@ async function run() {
         await outbox.rewriteUrl(op.tempUrl, url);
       } else if (op.type === 'create') {
         // Schreibzeit mitschicken – sonst gälte die Zeit des Synchronisierens
-        const post = await apiStore.create({ ...op.data, createdAt: op.at });
+        const post = await apiStore.create({ ...op.data, createdAt: op.at, clientId: op.id });
         await outbox.renameId(op.id, post.id);
         window.dispatchEvent(new CustomEvent('outbox:idmap', { detail: { from: op.id, to: post.id } }));
       } else if (op.type === 'update') {
@@ -222,6 +261,8 @@ async function run() {
           if (err instanceof HttpError && err.status === 404) {
             // Artikel gibt es auf dem Server nicht mehr -> Text nicht verlieren, neu anlegen
             await apiStore.create(data);
+          } else if (err instanceof HttpError && err.status === 409 && sameContent(err.current, data)) {
+            // Steht schon genau so auf dem Server (z. B. Anfrage kam doppelt an) -> nichts zu tun
           } else if (err instanceof HttpError && err.status === 409) {
             // Inzwischen auf einem anderen Gerät geändert -> nichts überschreiben,
             // die Offline-Fassung als eigenen Entwurf daneben legen
@@ -268,5 +309,5 @@ export async function showPendingImages(container) {
 
 export const syncStore = {
   name: 'Server',
-  list, get, create, update, remove, upload, removeUpload, renameTag,
+  list, cachedList, get, create, update, remove, upload, removeUpload, renameTag,
 };

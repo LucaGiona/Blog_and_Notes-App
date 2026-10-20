@@ -239,6 +239,18 @@ step('Ändern ändert die Schreibzeit nicht', *call(owner, 'PUT', f"/api/posts/{
 for x in (o, f):
     call(owner, 'DELETE', f"/api/posts/{x['id']}")
 
+# ---------- Doppelt angekommen: dieselbe Gerätekennung legt nur EINEN Artikel an ----------
+before = len(call(owner, 'GET', '/api/posts')[1])
+d1 = step('Neu mit Gerätekennung', *call(owner, 'POST', '/api/posts', {'title': 'Jung', 'clientId': 'local-abc123-def4'})[:2], 201,
+          lambda p: p['clientId'] == 'local-abc123-def4')
+d2 = step('Gleiche Kennung nochmal -> derselbe Artikel', *call(owner, 'POST', '/api/posts', {'title': 'Jung und', 'clientId': 'local-abc123-def4'})[:2], 201,
+          lambda p: p['id'] == d1['id'] and p['title'] == 'Jung')
+step('Nur ein Artikel dazugekommen', 200, len(call(owner, 'GET', '/api/posts')[1]) - before, 200, lambda n: n == 1)
+d3 = step('Ungültige Kennung wird ignoriert', *call(owner, 'POST', '/api/posts', {'title': 'X', 'clientId': '../böse'})[:2], 201,
+          lambda p: 'clientId' not in p)
+for x in (d1, d3):
+    call(owner, 'DELETE', f"/api/posts/{x['id']}")
+
 # ---------- Löschen, Abmelden ----------
 step('Artikel löschen', *call(owner, 'DELETE', f"/api/posts/{c['id']}")[:2], 204)
 step('nochmal löschen -> 404', *call(owner, 'DELETE', f"/api/posts/{c['id']}")[:2], 404)

@@ -27,6 +27,13 @@ export const auth = {
     this.name = this.loggedIn ? device.lastUser : null;
   },
 
+  // Schneller Start auf eigenen Geräten: so tun, als wäre die Anmeldung bestätigt,
+  // bis der Server antwortet (refresh läuft gleichzeitig und korrigiert das)
+  assumeKnown() {
+    this.loggedIn = device.trusted && !!device.lastUser;
+    this.name = this.loggedIn ? device.lastUser : null;
+  },
+
   async refresh() {
     try {
       const res = await fetchWithTimeout('api/me', { cache: 'no-store' }, 3000);

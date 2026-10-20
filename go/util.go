@@ -117,9 +117,15 @@ func readInput(r *http.Request, isNew bool) (map[string]any, *string) {
 		if written := clientTime(str(in, "createdAt")); written != "" {
 			out["createdAt"] = written
 		}
+		// Kennung vom Gerät: Kommt dieselbe Anfrage zweimal an, wird nur EIN Artikel angelegt
+		if id := str(in, "clientId"); clientIDPattern.MatchString(id) {
+			out["clientId"] = id
+		}
 	}
 	return out, base
 }
+
+var clientIDPattern = regexp.MustCompile(`^local-[A-Za-z0-9-]{1,40}$`)
 
 var isoTime = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$`)
 

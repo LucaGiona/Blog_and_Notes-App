@@ -31,11 +31,16 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
   gar nicht zu sehen (kein Titel, kein Eintrag). Öffentliche Entwürfe zeigen nur den Titel,
   der Text ist verschwommen.
 - **Themen** (Tags), beliebig kombinierbar, mit Filter; umbenennen und löschen in allen Artikeln.
-- **Zeitstrahl** als Startseite, Artikel steigen beim Scrollen auf.
+- **Zeitstrahl** als Startseite, Artikel steigen beim Scrollen auf. Sortiert danach, wann ein
+  Artikel angelegt wurde (umstellbar auf „zuletzt bearbeitet“); die ganze Karte ist anklickbar.
+- **Status auf einen Blick:** angemeldet ein Knopf „● Online ▾“ oben (auf dem Handy im
+  Burger-Menü) mit Verbindung, wartenden Änderungen, Reihenfolge, Website-Export und
+  „Alle Geräte abmelden“.
 - **PWA**: installierbar, offline lesen und schreiben. Offline Geschriebenes liegt in einem
   Postausgang und wird automatisch synchronisiert.
 - **Mehrere Geräte**: Änderungen erscheinen nach wenigen Sekunden überall; ein Konfliktschutz
-  verhindert, dass ein Gerät still die Fassung eines anderen überschreibt.
+  verhindert, dass ein Gerät still die Fassung eines anderen überschreibt. Kommt eine Anfrage
+  doppelt an (langsames Netz, zwei Fenster), wird ein Artikel trotzdem nur einmal angelegt.
 - **Auf die eigene Website**: öffentliche Artikel als `blog-data/posts.json` + Bilder exportieren,
   auf Wunsch automatisch committen und pushen.
 - **Ein Login** (ein Benutzer), signiertes Cookie, Schutz vor Durchprobieren,
@@ -111,7 +116,8 @@ PWA braucht. Für private Nutzung kostenlos.
 ### Anmelden
 
 - Besucher sehen keinen Anmelde-Knopf. Im Browser geht es über **`…/#/admin`**, in der
-  installierten App unten im Footer über „Anmelden“.
+  installierten App unten im Footer über „Anmelden“. Angemeldet stehen Status und
+  „Alle Geräte abmelden“ im Status-Knopf oben.
 - **„Auf diesem Gerät angemeldet bleiben“**: 30 Tage angemeldet, Artikel werden für offline
   gespeichert, offline schreiben möglich. Ohne Haken (fremde Geräte): abgemeldet, sobald
   der Browser schließt (spätestens nach 12 Stunden), nichts wird gespeichert.
@@ -131,12 +137,14 @@ PWA braucht. Für private Nutzung kostenlos.
 - **Offline:** Alles einmal Geladene ist offline verfügbar. Geschriebenes (nur bei
   „angemeldet bleiben“) kommt in den Postausgang und wird später in der richtigen Reihenfolge
   hochgeladen – auch eingefügte Bilder.
-- Antwortet der Server gar nicht (statt abzulehnen), greifen Zeitgrenzen: Nach höchstens
-  3,5 s startet die App aus dem Zwischenspeicher.
+- Antwortet der Server gar nicht (statt abzulehnen), greifen Zeitgrenzen (Service Worker
+  höchstens 3,5 s, Speichern 10 s). Ist bekannt, dass der Server weg ist, kommt alles sofort
+  aus dem Zwischenspeicher.
 - Wurde derselbe Artikel offline auf einem Gerät und online auf einem anderen geändert,
   wird nichts überschrieben: Die Offline-Fassung landet als Entwurf „Titel (Konflikt)“ daneben.
-- **Schneller Start:** App-Dateien kommen sofort aus dem Speicher des Geräts, Artikel zuerst
-  aus dem Netz. **Updates** kommen über `VERSION` in `sw.js`: Nach jeder Änderung an
+- **Schneller Start:** App-Dateien kommen sofort aus dem Speicher des Geräts. Auf eigenen
+  Geräten wartet die App beim Start nicht auf den Server: Sie zeigt sofort die zuletzt geladene
+  Artikelliste und holt die frische im Hintergrund. **Updates** kommen über `VERSION` in `sw.js`: Nach jeder Änderung an
   HTML/CSS/JS `VERSION` erhöhen – die App lädt die neue Fassung im Hintergrund und lädt sich
   einmal selbst neu. Eine neue JS-/CSS-Datei zusätzlich in `SHELL_FILES` eintragen.
 
@@ -199,8 +207,8 @@ echo /pfad/zur/website > data/homepage-path
 
 Dann exportiert der Server bei **Veröffentlichen/Aktualisieren**, beim **Umschalten
 Privat ↔ Öffentlich** und beim **Löschen**, committet **nur `blog-data/`** und macht `git push`.
-Autosave löst nichts aus; offline wird es vorgemerkt. Im Footer (auf dem Handy im Burger-Menü
-unter „Status“) stehen Stand und Fehler, dazu ein Knopf „Homepage aktualisieren“.
+Autosave löst nichts aus; offline wird es vorgemerkt. Im Status-Feld (Knopf „● Online ▾“ oben,
+auf dem Handy im Burger-Menü unter „Status“) stehen Stand und Fehler, dazu ein Knopf „Homepage aktualisieren“.
 
 - Gepusht wird der gerade ausgecheckte Branch – samt anderer, noch nicht gepushter Commits.
 - git fragt nie nach einem Passwort; Pushen muss auf dem Rechner also schon ohne Rückfrage gehen.
@@ -244,7 +252,7 @@ Bearbeitet wird sie in `php/`; danach `bash sync-frontend.sh` – das kopiert si
 Ausnahme sind die Icons: Die Go-Fassung hat bewusst blaue, damit man auf dem Home-Bildschirm
 sieht, welche läuft. Das Skript lässt `go/icons/` deshalb in Ruhe.
 
-JavaScript (beide Fassungen gleich): `js/main.js` (Start, Routen, Sync, Footer),
+JavaScript (beide Fassungen gleich): `js/main.js` (Start, Routen, Sync, Status),
 `js/storage/` (Server + Postausgang, Browser-Speicher), `js/views/` (Zeitstrahl, Artikel, Editor, Login),
 dazu `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.js` u. a.
 
@@ -259,7 +267,7 @@ dazu `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | GET | api/me | angemeldet? |
 | GET | api/posts | alle Artikel (Gäste: ohne private, Entwürfe ohne Text) |
 | GET | api/posts/:id | ein Artikel (Gäste: nur veröffentlichte, nicht private) |
-| POST | api/posts | neuer Artikel 🔒 `{title, body, status, tags[], private, createdAt?}` – ohne `private`: privat; `createdAt` = Schreibzeit (offline geschrieben) |
+| POST | api/posts | neuer Artikel 🔒 `{title, body, status, tags[], private, createdAt?, clientId?}` – ohne `private`: privat; `createdAt` = Schreibzeit (offline geschrieben); gleiche `clientId` (`local-…`) → derselbe Artikel statt eines neuen |
 | PUT | api/posts/:id | ändern 🔒 – `baseUpdatedAt` = bekannter `rev`; veraltet → 409 + `current` |
 | DELETE | api/posts/:id | löschen 🔒 |
 | POST | api/tags | Thema umbenennen `{from, to}` / löschen `{from, to: null}` 🔒 |
@@ -318,11 +326,16 @@ No framework, no build step, no dependencies. The user interface is in German.
 - **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private posts
   (no title, no entry). Public drafts show only the title; the text is blurred.
 - **Topics** (tags), freely combinable, with a filter; rename or delete across all posts.
-- **Timeline** as the start page; posts rise into view while scrolling.
+- **Timeline** as the start page; posts rise into view while scrolling. Sorted by when a post
+  was created (switchable to “last edited”); the whole card is clickable.
+- **Status at a glance:** when signed in, a “● Online ▾” button at the top (in the burger menu
+  on phones) with connection, waiting changes, sort order, website export and
+  “sign out all devices”.
 - **PWA**: installable, read and write offline. Anything written offline goes into an
   outbox and is synced automatically.
 - **Several devices**: changes show up everywhere within seconds; conflict protection
-  prevents one device from silently overwriting another device's version.
+  prevents one device from silently overwriting another device's version. If a request
+  arrives twice (slow network, two windows), a post is still created only once.
 - **To your own website**: export public posts as `blog-data/posts.json` + images,
   optionally commit and push automatically.
 - **One login** (one user), signed cookie, protection against password guessing,
@@ -397,7 +410,8 @@ server, and `tailscale serve` provides the HTTPS a PWA needs. Free for personal 
 ### Signing in
 
 - Visitors see no sign-in button. In the browser, go to **`…/#/admin`**; in the
-  installed app, use “Anmelden” in the footer.
+  installed app, use “Anmelden” in the footer. When signed in, status and
+  “sign out all devices” are in the status button at the top.
 - **“Stay signed in on this device”**: signed in for 30 days, posts are kept for offline use,
   writing offline is possible. Unchecked (other people's devices): signed out as soon as
   the browser closes (after 12 hours at the latest), nothing is stored.
@@ -417,12 +431,14 @@ server, and `tailscale serve` provides the HTTPS a PWA needs. Free for personal 
 - **Offline:** everything loaded once is available offline. Anything written (only with
   “stay signed in”) goes into the outbox and is uploaded later in the right order –
   pasted images too.
-- If the server doesn't answer at all (instead of refusing), timeouts kick in: after at most
-  3.5 s the app starts from its cache.
+- If the server doesn't answer at all (instead of refusing), timeouts kick in (service worker
+  3.5 s at most, saving 10 s). Once the app knows the server is gone, everything comes
+  straight from the cache.
 - If the same post was changed offline on one device and online on another, nothing is
   overwritten: the offline version is saved next to it as a draft “Title (Konflikt)”.
-- **Fast start:** app files come straight from the device's cache, posts from the network
-  first. **Updates** come via `VERSION` in `sw.js`: after every change to HTML/CSS/JS,
+- **Fast start:** app files come straight from the device's cache. On your own devices the app
+  doesn't wait for the server at startup: it shows the last loaded list of posts right away and
+  fetches the fresh one in the background. **Updates** come via `VERSION` in `sw.js`: after every change to HTML/CSS/JS,
   increase `VERSION` – the app fetches the new version in the background and reloads itself
   once. A new JS/CSS file also goes into `SHELL_FILES`.
 
@@ -485,8 +501,8 @@ echo /path/to/website > data/homepage-path
 
 The server then exports on **publish/update**, on **switching private ↔ public** and on
 **delete**, commits **only `blog-data/`** and runs `git push`.
-Autosave triggers nothing; offline, the publish is queued. The footer (on phones: burger menu →
-“Status”) shows status and errors, plus a “Homepage aktualisieren” (update homepage) button.
+Autosave triggers nothing; offline, the publish is queued. The status panel (“● Online ▾” button at the top;
+on phones: burger menu → “Status”) shows status and errors, plus a “Homepage aktualisieren” (update homepage) button.
 
 - The branch that is currently checked out is pushed – including other commits not yet pushed.
 - git never asks for a password, so pushing must already work without a prompt on the computer.
@@ -530,7 +546,7 @@ Edit it in `php/`, then run `bash sync-frontend.sh` – it copies it to `go/`.
 The icons are the exception: the Go version deliberately has blue ones, so you can tell on
 the home screen which one is running. The script therefore leaves `go/icons/` alone.
 
-JavaScript (identical in both versions): `js/main.js` (startup, routes, sync, footer),
+JavaScript (identical in both versions): `js/main.js` (startup, routes, sync, status),
 `js/storage/` (server + outbox, browser storage), `js/views/` (timeline, post, editor, login),
 plus `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.js` and others.
 
@@ -545,7 +561,7 @@ plus `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | GET | api/me | signed in? |
 | GET | api/posts | all posts (guests: without private ones, drafts without text) |
 | GET | api/posts/:id | one post (guests: published and non-private only) |
-| POST | api/posts | new post 🔒 `{title, body, status, tags[], private, createdAt?}` – without `private`: private; `createdAt` = time written (offline) |
+| POST | api/posts | new post 🔒 `{title, body, status, tags[], private, createdAt?, clientId?}` – without `private`: private; `createdAt` = time written (offline); same `clientId` (`local-…`) → the same post instead of a new one |
 | PUT | api/posts/:id | update 🔒 – `baseUpdatedAt` = known `rev`; outdated → 409 + `current` |
 | DELETE | api/posts/:id | delete 🔒 |
 | POST | api/tags | rename topic `{from, to}` / delete `{from, to: null}` 🔒 |

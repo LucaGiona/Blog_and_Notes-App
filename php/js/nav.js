@@ -4,6 +4,10 @@
 //
 // Auf schmalen Bildschirmen (Handy) werden die Knöpfe in ein Burger-Menü gepackt.
 // Ob Burger oder Knöpfe nebeneinander, entscheidet allein das CSS (@media).
+//
+// Angemeldet gibt es außerdem „Status“ (Online/Offline, wartende Änderungen, Reihenfolge,
+// Homepage, Alle Geräte abmelden): am Laptop als Knopf „● Online ▾“ mit aufklappendem Feld,
+// auf dem Handy unten im Burger-Menü. Gefüllt werden beide von main.js (data-status-box).
 
 import { auth } from './auth.js';
 
@@ -11,6 +15,7 @@ const ICON_MENU = `<svg class="icon-open" viewBox="0 0 24 24" width="22" height=
 const ICON_CLOSE = `<svg class="icon-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 
 let closeMenu = () => {};
+let closeStatus = () => {};
 let last = null;      // zuletzt gezeichnete Navigation (für setMenuExtras)
 let extras = [];      // Zusatzpunkte der aktuellen Seite, z. B. im Editor „＋ Bild“, „{ } Block“
 
@@ -26,6 +31,7 @@ export function setMenuExtras(items) {
 export function renderNav(nav, { onLogout, onRender }) {
   last = [nav, { onLogout, onRender }];
   closeMenu();
+  closeStatus();
 
   const items = [];
   if (auth.local || auth.loggedIn) items.push(`<a href="#/new" class="btn btn-primary">+ Neu</a>`);
@@ -36,7 +42,15 @@ export function renderNav(nav, { onLogout, onRender }) {
     return;
   }
 
-  nav.innerHTML = `
+  const showStatus = auth.loggedIn && !auth.local;
+
+  nav.innerHTML = `${showStatus ? `
+    <div class="status-wrap">
+      <button type="button" class="status-btn" aria-expanded="false" aria-controls="status-panel" title="Status und Einstellungen">
+        <span class="status-dot" aria-hidden="true"></span><span class="status-label">Status</span><span class="status-caret" aria-hidden="true"></span>
+      </button>
+      <div class="status-panel" id="status-panel" data-status-box aria-live="polite" hidden></div>
+    </div>` : ''}
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Menü öffnen">
       ${ICON_MENU}${ICON_CLOSE}
     </button>
@@ -44,7 +58,7 @@ export function renderNav(nav, { onLogout, onRender }) {
       <div class="nav-extra">${extras.map((x, i) =>
         `<button type="button" class="btn" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
       ${items.join('')}
-      ${auth.loggedIn && !auth.local ? '<div class="nav-status" id="nav-status" aria-live="polite"></div>' : ''}
+      ${showStatus ? '<div class="nav-status" id="nav-status" data-status-box aria-live="polite"></div>' : ''}
     </div>`;
 
   const toggle = nav.querySelector('.nav-toggle');
@@ -60,10 +74,27 @@ export function renderNav(nav, { onLogout, onRender }) {
 
   toggle.addEventListener('click', () => setOpen(!nav.classList.contains('is-open')));
 
-  // Klick auf einen Menüpunkt schließt das Menü
+  // Klick auf einen Menüpunkt schließt das Menü (außer z. B. bei der Reihenfolge)
   nav.querySelector('.nav-menu').addEventListener('click', e => {
-    if (e.target.closest('a, button')) closeMenu();
+    if (e.target.closest('a, button') && !e.target.closest('[data-keep-open]')) closeMenu();
   });
+
+  // Status-Feld (Laptop) auf- und zuklappen
+  const statusBtn = nav.querySelector('.status-btn');
+  const statusPanel = nav.querySelector('.status-panel');
+  if (statusBtn) {
+    const setStatusOpen = open => {
+      statusPanel.hidden = !open;
+      statusBtn.setAttribute('aria-expanded', open);
+    };
+    closeStatus = () => setStatusOpen(false);
+    statusBtn.addEventListener('click', () => setStatusOpen(statusPanel.hidden));
+    statusPanel.addEventListener('click', e => {
+      if (e.target.closest('[data-close]')) closeStatus();
+    });
+  } else {
+    closeStatus = () => {};
+  }
   nav.querySelector('[data-action="logout"]')?.addEventListener('click', onLogout);
   onRender?.(); // z. B. Status-Bereich füllen (main.js)
   nav.querySelector('.nav-extra')?.addEventListener('click', e => {
@@ -74,9 +105,11 @@ export function renderNav(nav, { onLogout, onRender }) {
 
 // Menü schließen: Klick daneben, Escape, Seitenwechsel
 document.addEventListener('click', e => {
-  if (!e.composedPath().some(el => el.id === 'nav')) closeMenu();
+  const path = e.composedPath();
+  if (!path.some(el => el.id === 'nav')) closeMenu();
+  if (!path.some(el => el.classList?.contains('status-wrap'))) closeStatus();
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeMenu();
+  if (e.key === 'Escape') { closeMenu(); closeStatus(); }
 });
-window.addEventListener('hashchange', () => closeMenu());
+window.addEventListener('hashchange', () => { closeMenu(); closeStatus(); });

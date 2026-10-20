@@ -40,6 +40,14 @@ final class JsonStore
     public function create(array $in): array
     {
         return $this->withLock(LOCK_EX, function (array $posts) use ($in) {
+            // Gleiche Kennung vom Gerät schon angelegt (Anfrage kam doppelt) -> den nehmen
+            if (isset($in['clientId'])) {
+                foreach ($posts as $post) {
+                    if (($post['clientId'] ?? null) === $in['clientId']) {
+                        return [$post, false];
+                    }
+                }
+            }
             $now = timestamp();
             $post = ['id' => uuid4()] + $in + ['createdAt' => $now, 'updatedAt' => $now, 'rev' => newRev()];
             $posts[] = $post;

@@ -58,7 +58,11 @@ async function send(url, options = {}, ms = 10_000) {
 }
 
 async function request(url, options = {}, ms = 10_000) {
-  const res = await send(url, { headers: { 'Content-Type': 'application/json' }, ...options }, ms);
+  const headers = { 'Content-Type': 'application/json' };
+  // Schon bekannt, dass der Server nicht antwortet: Der Service Worker soll beim Lesen
+  // nicht erst 3,5 s aufs Netz warten, sondern sofort die gespeicherte Fassung geben
+  if (!connection.online && !options.method) headers['X-Notizblog-Offline'] = '1';
+  const res = await send(url, { headers, ...options }, ms);
   if (res.type === 'error' || res.status === 0) throw new NetworkError('Keine Verbindung zum Server');
   if (res.status === 401) {
     window.dispatchEvent(new Event('auth:required'));

@@ -1,7 +1,7 @@
 // Editor: Titel + Text (Markdown), Bilder und Code-Blöcke einfügen,
 // Vorschau, Autosave als Entwurf, Veröffentlichen-Button.
 
-import { debounce } from '../utils.js';
+import { debounce, formatDateTime, sameMinute } from '../utils.js';
 import { renderMarkdown, enableCopyButtons, findBlocks, cutBlock } from '../markdown.js';
 import { prepareImage } from '../image.js';
 import { showPendingImages } from '../storage/sync.js';
@@ -116,6 +116,11 @@ export async function renderEditor(root, store, id = null) {
   title.value = post?.title ?? '';
   body.value = post?.body ?? '';
   if (!post) title.focus();
+  // Beim Öffnen: wann angelegt, wann zuletzt bearbeitet
+  if (post?.createdAt) {
+    setStatus(`Angelegt ${formatDateTime(post.createdAt)}`
+      + (sameMinute(post.createdAt, post.updatedAt) ? '' : ` · bearbeitet ${formatDateTime(post.updatedAt)}`));
+  }
   enableCopyButtons(preview);
 
   // ---------- Stand merken (für andere Geräte) ----------
@@ -302,9 +307,33 @@ export async function renderEditor(root, store, id = null) {
   // ---------- Speichern ----------
 
   // explicit = per Knopf (Zwischenspeichern/Veröffentlichen) – nur dann meckert ein fehlender Titel laut
+  //
+  // Immer nur EIN Speichervorgang gleichzeitig. Läuft schon einer (z. B. ein neuer Artikel
+  // wird gerade angelegt und der Server antwortet langsam), wird danach genau einmal mit dem
+  // dann aktuellen Text nachgespeichert. Vorher konnte das automatische Speichern beim Tippen
+  // des Titels denselben Artikel mehrmals anlegen („Jung und synchoni“, „… synchonizit“ …).
+  let next = null; // vorgemerktes Speichern { status, explicit, promise }
   function save(newStatus, explicit = false) {
-    saving = doSave(newStatus, explicit).finally(() => { saving = null; });
-    return saving;
+    if (!saving) {
+      saving = doSave(newStatus, explicit).finally(() => { saving = null; });
+      return saving;
+    }
+    if (next) {
+      next.status = newStatus ?? next.status;
+      next.explicit ||= explicit;
+      return next.promise;
+    }
+    const queued = { status: newStatus, explicit };
+    queued.promise = saving.catch(() => null).then(() => {
+      next = null;
+      return save(queued.status, queued.explicit);
+    });
+    next = queued;
+    return queued.promise;
+  }
+  // Wartet, bis alles Vorgemerkte gespeichert ist
+  async function idle() {
+    while (saving || next) await (next?.promise ?? saving).catch(() => null);
   }
 
   async function doSave(newStatus, explicit) {
@@ -445,7 +474,7 @@ export async function renderEditor(root, store, id = null) {
       } finally {
         uploading--;
         // Editor inzwischen verlassen -> mit dem fertigen Bild nachspeichern
-        if (leaving && !uploading && !deleted) (saving ?? Promise.resolve()).then(() => save());
+        if (leaving && !uploading && !deleted) save(); // wartet selbst auf laufendes Speichern
       }
     }
   }
@@ -609,7 +638,7 @@ export async function renderEditor(root, store, id = null) {
   // Die App meldet: Auf dem Server hat sich etwas geändert (alle 10 s geprüft)
   const onDataChanged = async () => {
     if (!post || post.id.startsWith('local-') || conflict) return;
-    if (saving) await saving;              // eigenes Speichern erst abwarten
+    await idle();                          // eigenes Speichern erst abwarten
     let current;
     try {
       current = await store.get(post.id);
@@ -652,8 +681,7 @@ export async function renderEditor(root, store, id = null) {
     if (!title.value.trim() && !body.value.trim()) return; // ganz leer -> nichts zu sichern
     leaving = true;
     if (!title.value.trim()) title.value = saved.title || 'Ohne Titel';
-    (saving ?? Promise.resolve())
-      .then(() => save())
+    save() // wartet selbst auf laufendes Speichern
       .then(p => { if (p) window.dispatchEvent(new Event('data:changed')); }); // Liste zeigt ihn sofort
   }
 
