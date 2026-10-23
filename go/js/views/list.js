@@ -81,6 +81,13 @@ export async function renderList(root, store, auth, activeTag = null) {
           <button type="button" data-scope="${key}" aria-pressed="${scope === key}">${label}</button>`).join('')}
       </div>` : '';
 
+    // Reihenfolge: wann angelegt / zuletzt bearbeitet – rechts neben Alle/Öffentlich/Privat
+    const sortFilter = `
+      <div class="sort-filter" role="group" aria-label="Reihenfolge">
+        ${[['created', 'angelegt'], ['updated', 'bearbeitet']].map(([key, label]) => `
+          <button type="button" data-sort="${key}" aria-pressed="${by === key}">${label}</button>`).join('')}
+      </div>`;
+
     // Themen-Leiste: „Alle“ plus jedes vorkommende Thema
     const tagFilter = allTags.length ? `
       <nav class="tag-filter" aria-label="Nach Thema filtern">
@@ -111,13 +118,18 @@ export async function renderList(root, store, auth, activeTag = null) {
       : scope === 'private' ? 'Noch keine privaten Artikel.' : 'Noch keine öffentlichen Artikel.';
 
     root.innerHTML = `
-      ${scopeFilter}
+      <div class="list-controls">${scopeFilter}${sortFilter}</div>
       ${tagFilter}
       <div class="timeline">
         ${shown.length
           ? `<span class="tl-line" aria-hidden="true"><span class="tl-progress"></span></span>${items}`
           : `<p class="empty">${empty}</p>`}
       </div>`;
+
+    root.querySelector('.sort-filter').addEventListener('click', e => {
+      const key = e.target.closest('[data-sort]')?.dataset.sort;
+      if (key && key !== device.sortBy) device.sortBy = key; // 'sort:change' zeichnet neu (main.js)
+    });
 
     root.querySelector('.scope-filter')?.addEventListener('click', e => {
       const key = e.target.closest('[data-scope]')?.dataset.scope;

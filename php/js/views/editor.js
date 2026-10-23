@@ -9,6 +9,7 @@ import { collectTags, cleanTag, sameTag, MAX_TAGS } from '../tags.js';
 import { escapeHtml } from '../utils.js';
 import { requestPublish } from '../homepage.js';
 import { setMenuExtras } from '../nav.js';
+import { setLeaveGuard } from '../router.js';
 
 export async function renderEditor(root, store, id = null) {
   let post = null;
@@ -79,7 +80,16 @@ export async function renderEditor(root, store, id = null) {
           ${post?.status === 'published' ? 'Aktualisieren' : 'Veröffentlichen'}
         </button>
       </div>
-    </form>`;
+    </form>
+    <div class="leave-ask" role="alertdialog" aria-modal="true" aria-labelledby="leave-ask-text" hidden>
+      <div class="leave-ask-box">
+        <p id="leave-ask-text"><strong>Titel fehlt</strong>Du hast geschrieben, aber noch keinen Titel vergeben.</p>
+        <div class="leave-ask-actions">
+          <button type="button" class="btn btn-primary" data-ask="title">Titel eingeben</button>
+          <button type="button" class="btn" data-ask="untitled">Als „Ohne Titel“ speichern</button>
+        </div>
+      </div>
+    </div>`;
 
   const form = root.querySelector('form');
   const title = form.elements.title;
@@ -90,6 +100,9 @@ export async function renderEditor(root, store, id = null) {
   // Statuszeile: immer eine Zeile (CSS kürzt mit …), voller Text als Tooltip
   const setStatus = text => { status.textContent = text; status.title = text; };
   const alertBox = root.querySelector('.editor-alert');
+  // Einmal merken: Beim Speichern nach dem Verlassen zeigt root schon die nächste Seite
+  const deleteBtn = root.querySelector('[data-action="delete"]');
+  const mdHint = root.querySelector('.md-hint');
 
   // ---------- Fehlermeldungen ----------
   // Titel fehlt -> Hinweis direkt unter dem Titelfeld.
@@ -138,6 +151,7 @@ export async function renderEditor(root, store, id = null) {
   let saving = null;       // laufender Speichervorgang
   let leaving = false;     // Editor wird gerade verlassen (Speichern im Hintergrund)
   let deleted = false;     // Artikel gelöscht -> beim Verlassen nichts mehr speichern
+  let fallbackTitle = '';  // nur beim Wegwechseln aus der App: Titel, falls noch keiner da ist
 
   const sameTags = (a, b) => a.length === b.length && a.every((t, i) => sameTag(t, b[i]));
   const isDirty = () =>
@@ -339,7 +353,7 @@ export async function renderEditor(root, store, id = null) {
   async function doSave(newStatus, explicit) {
     if (conflict) return null; // erst entscheiden, welche Fassung gilt
     const data = {
-      title: title.value.trim(),
+      title: title.value.trim() || fallbackTitle,
       body: withoutMarkers(body.value), // „Bild wird hochgeladen …“ nie speichern
       status: newStatus ?? post?.status ?? 'draft',
       tags: [...tags],
@@ -375,7 +389,7 @@ export async function renderEditor(root, store, id = null) {
       publishAfterSave = false;
       requestPublish();
     }
-    root.querySelector('[data-action="delete"]').hidden = false; // ab jetzt gibt es etwas zu löschen
+    deleteBtn.hidden = false; // ab jetzt gibt es etwas zu löschen
     // Offline (Postausgang) hat der Server noch nichts -> Stand bleibt der alte
     if (!post.pending) base = revOf(post);
 
@@ -533,7 +547,7 @@ export async function renderEditor(root, store, id = null) {
     }
     preview.hidden = !isPreview;
     body.hidden = isPreview;
-    root.querySelector('.md-hint').hidden = isPreview; // Schreibhilfe nur beim Schreiben
+    mdHint.hidden = isPreview; // Schreibhilfe nur beim Schreiben
     form.querySelectorAll('[data-tab]').forEach(b => {
       b.classList.toggle('is-active', b.dataset.tab === tab);
       b.setAttribute('aria-selected', b.dataset.tab === tab);
@@ -685,6 +699,48 @@ export async function renderEditor(root, store, id = null) {
       .then(p => { if (p) window.dispatchEvent(new Event('data:changed')); }); // Liste zeigt ihn sofort
   }
 
+  // ---------- Titel fehlt: beim Verlassen nachfragen ----------
+  // Tippt man auf „Blog“, „+ Neu“ oder zurück, obwohl Text, aber kein Titel da ist, bleibt der
+  // Editor offen und fragt: Titel eingeben – oder als „Ohne Titel“ speichern.
+  const leaveAsk = root.querySelector('.leave-ask');
+  let leaveTo = null;
+  const needsTitle = () => !deleted && !conflict && !title.value.trim() && !!withoutMarkers(body.value).trim();
+  setLeaveGuard(next => {
+    if (!needsTitle()) return true;
+    leaveTo = next || '#/';
+    history.replaceState(null, '', post ? `#/edit/${post.id}` : '#/new'); // Adresse zurück auf den Editor
+    leaveAsk.hidden = false;
+    leaveAsk.querySelector('[data-ask="title"]').focus();
+    return false;
+  });
+  const askTitle = () => {
+    leaveAsk.hidden = true;
+    leaveTo = null;
+    title.focus();
+  };
+  leaveAsk.addEventListener('click', e => {
+    const choice = e.target.closest('[data-ask]')?.dataset.ask;
+    if (choice === 'title' || e.target === leaveAsk) askTitle(); // auch Klick daneben = weiterschreiben
+    if (choice === 'untitled') {
+      title.value = saved.title || 'Ohne Titel';
+      leaveAsk.hidden = true;
+      location.hash = leaveTo ?? '#/'; // jetzt mit Titel -> darf gehen, beim Verlassen wird gespeichert
+    }
+  });
+  leaveAsk.addEventListener('keydown', e => { if (e.key === 'Escape') askTitle(); });
+
+  // App wird weggewischt oder ein anderes Programm geöffnet: Dann kann niemand mehr gefragt
+  // werden. Text ohne Titel trotzdem sichern – als „Ohne Titel“, das Titelfeld bleibt leer.
+  const onHide = () => {
+    if (document.visibilityState !== 'hidden' || !isDirty()) return;
+    autosave.cancel();
+    if (title.value.trim()) { save(); return; }
+    if (!needsTitle()) return;
+    fallbackTitle = saved.title || 'Ohne Titel';
+    save().finally(() => { fallbackTitle = ''; });
+  };
+  document.addEventListener('visibilitychange', onHide);
+
   // Auf dem Handy wandern „＋ Bild“ und „{ } Block“ ins Burger-Menü (CSS blendet sie hier aus)
   setMenuExtras([
     ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
@@ -701,7 +757,16 @@ export async function renderEditor(root, store, id = null) {
     html.style.setProperty('--vv-h', `${vv.height}px`);
     html.style.setProperty('--vv-top', `${vv.offsetTop}px`);
     updateTyping();
+    requestAnimationFrame(keepCaret); // Editor ist kleiner geworden (Tastatur) -> Cursor nachholen
   };
+  // Cursor ganz sichtbar halten. Das iPhone scrollt ihn nur bis an den Rand des Textfelds –
+  // und das, BEVOR der Editor an die Tastatur angepasst ist. Steht der Cursor am Textende
+  // (beim Schreiben fast immer), ganz nach unten scrollen; unten ist etwas Luft (CSS).
+  function keepCaret() {
+    if (document.activeElement !== body || body.selectionEnd < body.value.length - 1) return;
+    body.scrollTop = body.scrollHeight;
+  }
+  body.addEventListener('input', () => requestAnimationFrame(keepCaret));
   // „Tippen“-Ansicht: Textfeld hat den Fokus und es ist eng (Handy mit Tastatur)
   const updateTyping = () => {
     const tight = (vv?.height ?? window.innerHeight) < 560;
@@ -722,6 +787,8 @@ export async function renderEditor(root, store, id = null) {
     html.style.removeProperty('--vv-top');
     autosave.cancel();
     setMenuExtras([]);
+    setLeaveGuard(null);
+    document.removeEventListener('visibilitychange', onHide);
     leaveSave();
     window.removeEventListener('outbox:idmap', onIdMap);
     window.removeEventListener('data:changed', onDataChanged);

@@ -26,13 +26,15 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
   Code-Blöcken mit Kopieren-Knopf; Bilder und Code-Blöcke in der Vorschau per Papierkorb entfernen.
 - **Editor als ganze Seite:** Titel und Werkzeuge oben, Knöpfe unten, dazwischen scrollt nur der
   Text. Auf dem Handy mit offener Tastatur bleiben nur Titel, Text und eine Knopfzeile.
-  Text ohne Titel geht beim Verlassen nicht verloren (Entwurf „Ohne Titel“).
+  Fehlt beim Verlassen der Titel, fragt der Editor nach (Titel eingeben oder „Ohne Titel“);
+  wird die App weggewischt, wird der Text als „Ohne Titel“ gesichert.
 - **🔒 Privat / 🌐 Öffentlich** – neue Artikel sind privat. Private Artikel bekommt ein Besucher
   gar nicht zu sehen (kein Titel, kein Eintrag). Öffentliche Entwürfe zeigen nur den Titel,
   der Text ist verschwommen.
 - **Themen** (Tags), beliebig kombinierbar, mit Filter; umbenennen und löschen in allen Artikeln.
 - **Zeitstrahl** als Startseite, Artikel steigen beim Scrollen auf. Sortiert danach, wann ein
-  Artikel angelegt wurde (umstellbar auf „zuletzt bearbeitet“); die ganze Karte ist anklickbar.
+  Artikel angelegt wurde – Knöpfe „angelegt / bearbeitet“ rechts über dem Zeitstrahl; die ganze
+  Karte ist anklickbar.
 - **Status auf einen Blick:** angemeldet ein Knopf „● Online ▾“ oben (auf dem Handy im
   Burger-Menü) mit Verbindung, wartenden Änderungen, Reihenfolge, Website-Export und
   „Alle Geräte abmelden“.
@@ -142,6 +144,10 @@ PWA braucht. Für private Nutzung kostenlos.
   aus dem Zwischenspeicher.
 - Wurde derselbe Artikel offline auf einem Gerät und online auf einem anderen geändert,
   wird nichts überschrieben: Die Offline-Fassung landet als Entwurf „Titel (Konflikt)“ daneben.
+- **Nichts geht verloren:** Bei Server-Fehlern (5xx) bleibt alles im Postausgang und wird später
+  nochmal geschickt; dauerhaft Abgelehntes wird als Entwurf „(nicht synchronisiert)“ gesichert;
+  was während des Synchronisierens weitergeschrieben wird, kommt als eigene Änderung hinterher;
+  was beim Server gespeichert ist, bleibt auch offline in der Liste sichtbar.
 - **Schneller Start:** App-Dateien kommen sofort aus dem Speicher des Geräts. Auf eigenen
   Geräten wartet die App beim Start nicht auf den Server: Sie zeigt sofort die zuletzt geladene
   Artikelliste und holt die frische im Hintergrund. **Updates** kommen über `VERSION` in `sw.js`: Nach jeder Änderung an
@@ -322,12 +328,14 @@ No framework, no build step, no dependencies. The user interface is in German.
   code blocks with a copy button; remove images and code blocks in the preview via the trash icon.
 - **Full-page editor:** title and tools at the top, buttons at the bottom, only the text scrolls
   in between. On a phone with the keyboard open, only title, text and one row of buttons remain.
-  Text without a title is not lost when leaving (draft “Ohne Titel”).
+  If the title is missing when leaving, the editor asks (enter a title or save as “Ohne Titel”);
+  if the app is swiped away, the text is saved as “Ohne Titel”.
 - **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private posts
   (no title, no entry). Public drafts show only the title; the text is blurred.
 - **Topics** (tags), freely combinable, with a filter; rename or delete across all posts.
 - **Timeline** as the start page; posts rise into view while scrolling. Sorted by when a post
-  was created (switchable to “last edited”); the whole card is clickable.
+  was created – “angelegt / bearbeitet” (created / edited) buttons at the top right of the
+  timeline; the whole card is clickable.
 - **Status at a glance:** when signed in, a “● Online ▾” button at the top (in the burger menu
   on phones) with connection, waiting changes, sort order, website export and
   “sign out all devices”.
@@ -436,6 +444,10 @@ server, and `tailscale serve` provides the HTTPS a PWA needs. Free for personal 
   straight from the cache.
 - If the same post was changed offline on one device and online on another, nothing is
   overwritten: the offline version is saved next to it as a draft “Title (Konflikt)”.
+- **Nothing gets lost:** on server errors (5xx) everything stays in the outbox and is sent again
+  later; anything rejected for good is saved as a draft “(nicht synchronisiert)”; text typed while
+  syncing is sent afterwards as a change of its own; anything saved on the server stays visible
+  in the list offline.
 - **Fast start:** app files come straight from the device's cache. On your own devices the app
   doesn't wait for the server at startup: it shows the last loaded list of posts right away and
   fetches the fresh one in the background. **Updates** come via `VERSION` in `sw.js`: after every change to HTML/CSS/JS,

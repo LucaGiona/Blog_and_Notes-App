@@ -159,6 +159,7 @@ function renderMenuStatus() {
   if (homepage.configured) {
     lines.push(`<li class="${homepage.last?.ok === false ? 'is-error' : ''}">${escapeHtml(homepageLabel())}</li>`);
   }
+  if (appVersion) lines.push(`<li class="is-version">App ${escapeHtml(appVersion)}</li>`);
   const html = `
     <p class="nav-status-title">Status</p>
     <ul>${lines.join('')}</ul>
@@ -170,6 +171,19 @@ function renderMenuStatus() {
     ${homepage.configured ? `<button type="button" class="btn" data-menu="publish" ${homepage.busy ? 'disabled' : ''}>Homepage aktualisieren</button>` : ''}
     <button type="button" class="link-button nav-danger" data-menu="logout-all" data-close>Alle Geräte abmelden</button>`;
   boxes.forEach(box => { box.innerHTML = html; });
+}
+
+// Welche App-Version läuft? (= VERSION in sw.js, steckt im Namen des Zwischenspeichers.)
+// Steht im Status-Feld – so sieht man beim Testen, ob ein Update angekommen ist.
+let appVersion = null;
+if ('caches' in window) {
+  caches.keys().then(keys => {
+    // Während eines Updates liegen kurz zwei Fassungen da -> die neueste nehmen
+    const versions = keys.filter(k => k.startsWith('notizblog-shell-')).map(k => k.slice('notizblog-shell-'.length));
+    versions.sort((x, y) => (parseInt(y.slice(1)) || 0) - (parseInt(x.slice(1)) || 0));
+    appVersion = versions[0] ?? null;
+    renderMenuStatus();
+  }).catch(() => {});
 }
 
 // Knopf oben (Laptop): Punkt + kurzes Wort. Grün = online und alles da, gelb = Änderungen
@@ -288,6 +302,7 @@ window.addEventListener('data:changed', () => {
 
 // Reihenfolge umgestellt -> Zeitstrahl neu zeichnen
 window.addEventListener('sort:change', () => {
+  renderMenuStatus(); // Knöpfe im Status-Feld auf denselben Stand
   const hash = location.hash || '#/';
   if (hash === '#/' || hash.startsWith('#/thema/')) router.refresh();
 });

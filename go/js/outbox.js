@@ -40,6 +40,80 @@ export async function all() {
   }
 }
 
+// Alle Einträge in EINER Transaktion lesen und ändern. IndexedDB führt Transaktionen auf
+// demselben Speicher nacheinander aus – auch über mehrere Fenster hinweg. So kann nichts
+// dazwischenfunken, z. B. Autosave, während gerade synchronisiert wird.
+// fn(ops, store) bekommt die Einträge nach key sortiert und ändert sie mit store.put/add.
+function change(fn) {
+  return openDb().then(db => new Promise((resolve, reject) => {
+    const t = db.transaction(STORE, 'readwrite');
+    const s = t.objectStore(STORE);
+    let result;
+    const req = s.getAll();
+    req.onsuccess = () => { result = fn(req.result ?? [], s); };
+    t.oncomplete = () => resolve(result);
+    t.onerror = () => reject(t.error);
+  }));
+}
+
+/**
+ * Änderung an einem Artikel vormerken: mit dem letzten Eintrag zusammenfassen, wenn der
+ * denselben Artikel betrifft – aber NIE mit einem Eintrag, der gerade gesendet wird
+ * (sonst würde er nach dem Senden samt der neuen Änderung gelöscht). Dann ein eigener Eintrag.
+ */
+export function mergeOrAdd(id, data, at) {
+  return change((ops, s) => {
+    const last = ops[ops.length - 1];
+    if (last && last.id === id && (last.type === 'create' || last.type === 'update') && !last.sending) {
+      last.data = { ...last.data, ...data };
+      last.at = at;
+      s.put(last);
+    } else {
+      s.add({ type: 'update', id, data, at });
+    }
+  });
+}
+
+/** Ersten Eintrag zum Senden holen und als „wird gesendet“ markieren (ab jetzt unveränderlich). */
+export function claimFirst() {
+  return change((ops, s) => {
+    const op = ops[0];
+    if (!op) return null;
+    op.sending = true;
+    s.put(op);
+    return op;
+  });
+}
+
+/** Senden hat nicht geklappt -> Eintrag bleibt und darf wieder ergänzt werden */
+export function release(key) {
+  return change((ops, s) => {
+    const op = ops.find(o => o.key === key);
+    if (op?.sending) {
+      delete op.sending;
+      s.put(op);
+    }
+  });
+}
+
+/**
+ * Nach dem Senden: Weitere wartende Änderungen am selben Artikel bauten auf demselben Stand
+ * auf (fromBase). Sie bekommen den neuen Stand vom Server (toRev) – sonst hielte der Server
+ * sie für „auf einem anderen Gerät geändert“ und es entstünde eine Konflikt-Kopie.
+ * Mit toId werden sie stattdessen auf einen anderen Artikel umgeleitet (z. B. die Konflikt-Kopie).
+ */
+export function rebase(id, fromBase, toRev, toId = id, extra = {}) {
+  return change((ops, s) => {
+    for (const op of ops) {
+      if (op.id === id && op.type === 'update' && !op.sending && op.data?.baseUpdatedAt === fromBase) {
+        Object.assign(op, { id: toId }, extra);
+        op.data = { ...op.data, baseUpdatedAt: toRev };
+        s.put(op);
+      }
+    }
+  });
+}
+
 export const count = async () => (await all()).length;
 export const add = op => tx('readwrite', s => s.add(op));
 export const put = op => tx('readwrite', s => s.put(op));

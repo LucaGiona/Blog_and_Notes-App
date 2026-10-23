@@ -66,6 +66,30 @@ async function cachedList() {
   }
 }
 
+/**
+ * Was dieses Gerät beim Server gespeichert hat, sofort auch in die gespeicherte Liste
+ * (Zwischenspeicher des Service Workers) eintragen. Sonst fehlt ein Artikel offline in der
+ * Liste, wenn er direkt beim Server angelegt wurde und die Verbindung kurz danach weg war –
+ * er war dann bis zum nächsten Laden unsichtbar („Eintrag weg“). removeId = Artikel entfernen.
+ */
+async function remember(post, removeId = null) {
+  if (device.shortSession || !('caches' in window)) return;
+  try {
+    const cache = await caches.open('notizblog-api');
+    const json = data => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
+    const listUrl = new URL('api/posts', location.href).href;
+    const res = await cache.match(listUrl, { ignoreVary: true });
+    if (res) {
+      const gone = removeId ?? post.id;
+      const list = (await res.json()).filter(p => p.id !== gone);
+      if (post) list.push(post);
+      await cache.put(listUrl, json(list));
+    }
+    if (post) await cache.put(new URL(`api/posts/${post.id}`, location.href).href, json(post));
+  } catch { /* nur eine Hilfe für offline – ohne geht es auch */ }
+}
+const remembered = post => { remember(post); return post; };
+
 async function get(id) {
   id = outbox.translateId(id);
   if (id.startsWith('local-')) return (await list()).find(p => p.id === id) ?? null;
@@ -92,6 +116,10 @@ async function get(id) {
 // Darf auf diesem Gerät überhaupt offline gespeichert werden?
 const canQueue = () => device.trusted;
 
+// Vorübergehender Server-Fehler (Server überlastet, PHP läuft nicht hinter Tailscale = 502,
+// Wartung beim Hoster = 503): wie „kein Netz“ behandeln – später nochmal versuchen
+const isTemporary = err => err instanceof HttpError && (err.status >= 500 || err.status === 408 || err.status === 429);
+
 // Erst direkt versuchen. Kein Netz -> in den Postausgang (nur auf eigenen Geräten).
 // Liegt schon etwas im Postausgang, wird hinten angestellt, damit die Reihenfolge stimmt.
 async function directOrQueue(direct, queue) {
@@ -105,8 +133,8 @@ async function directOrQueue(direct, queue) {
   try {
     return await direct();
   } catch (err) {
-    if (err instanceof NetworkError) {
-      if (!canQueue()) throw new NetworkError('keine Verbindung zum Server');
+    if (err instanceof NetworkError || isTemporary(err)) {
+      if (!canQueue()) throw err instanceof NetworkError ? new NetworkError('keine Verbindung zum Server') : err;
       return queue();
     }
     throw err;
@@ -115,19 +143,11 @@ async function directOrQueue(direct, queue) {
 
 // Änderung anhängen – oder mit dem letzten Eintrag zusammenfassen, wenn der denselben
 // Artikel betrifft (Autosave erzeugt sonst bei jedem Tippen einen neuen Eintrag).
-// Nur mit dem LETZTEN Eintrag, damit z. B. ein Bild-Upload davor nicht übersprungen wird.
+// Nur mit dem LETZTEN Eintrag, damit z. B. ein Bild-Upload davor nicht übersprungen wird,
+// und nie mit einem Eintrag, der gerade gesendet wird (siehe outbox.mergeOrAdd).
 async function queueSave(id, data) {
-  const ops = await outbox.all();
-  const last = ops[ops.length - 1];
   const at = nowIso();
-
-  if (last && last.id === id && (last.type === 'create' || last.type === 'update')) {
-    last.data = { ...last.data, ...data };
-    last.at = at;
-    await outbox.put(last);
-  } else {
-    await outbox.add({ type: 'update', id, data, at });
-  }
+  await outbox.mergeOrAdd(id, data, at);
   notify();
   return { ...(await get(id)), ...data, id, updatedAt: at, pending: true };
 }
@@ -139,7 +159,7 @@ async function queueSave(id, data) {
 async function create(data) {
   const id = 'local-' + randomId();
   return directOrQueue(
-    () => apiStore.create({ ...data, clientId: id }),
+    () => apiStore.create({ ...data, clientId: id }).then(remembered),
     async () => {
       const at = nowIso();
       await outbox.add({ type: 'create', id, data, at });
@@ -151,13 +171,13 @@ async function create(data) {
 
 async function update(id, data) {
   id = outbox.translateId(id);
-  return directOrQueue(() => apiStore.update(id, data), () => queueSave(id, data));
+  return directOrQueue(() => apiStore.update(id, data).then(remembered), () => queueSave(id, data));
 }
 
 async function remove(id) {
   id = outbox.translateId(id);
   return directOrQueue(
-    () => apiStore.remove(id),
+    () => apiStore.remove(id).then(() => remember(null, id)),
     async () => {
       // Wartende Änderungen an diesem Artikel sind dann überflüssig
       for (const op of await outbox.all()) {
@@ -232,15 +252,20 @@ function withSyncLock(fn) {
   return navigator.locks.request('notizblog-sync', fn);
 }
 
-const sameContent = (a, b) => !!a
+// Steht auf dem Server (a) dasselbe wie in der wartenden Änderung (b)?
+// Mit status: Entwurf und Veröffentlicht sind NICHT dasselbe.
+const sameText = (a, b) => !!a
   && a.title === b.title && a.body === b.body
   && JSON.stringify(a.tags ?? []) === JSON.stringify(b.tags ?? a.tags ?? [])
   && (b.private === undefined || !!a.private === !!b.private);
+const sameStatus = (a, b) => b.status === undefined || a.status === b.status;
+const revOf = p => p?.rev ?? p?.updatedAt;
 
 async function run() {
   lastSyncError = null;
   for (;;) {
-    const [op] = await outbox.all();
+    // Eintrag holen und sperren: Ab jetzt hängt Autosave nichts mehr an ihn an
+    const op = await outbox.claimFirst().catch(() => null);
     if (!op) return 'done';
 
     try {
@@ -250,31 +275,16 @@ async function run() {
         await outbox.rewriteUrl(op.tempUrl, url);
       } else if (op.type === 'create') {
         // Schreibzeit mitschicken – sonst gälte die Zeit des Synchronisierens
-        const post = await apiStore.create({ ...op.data, createdAt: op.at, clientId: op.id });
+        const post = remembered(await apiStore.create({ ...op.data, createdAt: op.at, clientId: op.id }));
         await outbox.renameId(op.id, post.id);
         window.dispatchEvent(new CustomEvent('outbox:idmap', { detail: { from: op.id, to: post.id } }));
+        await outbox.rebase(post.id, undefined, revOf(post));
       } else if (op.type === 'update') {
-        try {
-          await apiStore.update(op.id, op.data);
-        } catch (err) {
-          const { baseUpdatedAt, ...data } = op.data;
-          if (err instanceof HttpError && err.status === 404) {
-            // Artikel gibt es auf dem Server nicht mehr -> Text nicht verlieren, neu anlegen
-            await apiStore.create(data);
-          } else if (err instanceof HttpError && err.status === 409 && sameContent(err.current, data)) {
-            // Steht schon genau so auf dem Server (z. B. Anfrage kam doppelt an) -> nichts zu tun
-          } else if (err instanceof HttpError && err.status === 409) {
-            // Inzwischen auf einem anderen Gerät geändert -> nichts überschreiben,
-            // die Offline-Fassung als eigenen Entwurf daneben legen
-            await apiStore.create({ ...data, title: `${data.title} (Konflikt)`, status: 'draft' });
-            lastSyncError = `„${data.title}“ wurde auch auf einem anderen Gerät geändert – deine Fassung liegt als „(Konflikt)“-Entwurf daneben.`;
-          } else {
-            throw err;
-          }
-        }
+        await sendUpdate(op);
       } else if (op.type === 'delete') {
         try {
           await apiStore.remove(op.id);
+          remember(null, op.id);
         } catch (err) {
           if (!(err instanceof HttpError && err.status === 404)) throw err;
         }
@@ -282,18 +292,82 @@ async function run() {
       await outbox.remove(op.key);
       notify();
     } catch (err) {
-      if (err instanceof NetworkError) return 'offline';          // später nochmal
+      if (err instanceof NetworkError) {                          // später nochmal
+        await outbox.release(op.key);
+        return 'offline';
+      }
       if (err instanceof HttpError && err.status === 401) {       // erst wieder anmelden
+        await outbox.release(op.key);
         lastSyncError = 'Bitte neu anmelden, dann wird synchronisiert.';
         return 'auth';
       }
-      // Anderer Fehler (z. B. Bild vom Server abgelehnt): diesen Eintrag überspringen,
-      // damit der Rest nicht ewig hängen bleibt
+      if (isTemporary(err)) {                                     // Server-Fehler: Eintrag bleibt
+        await outbox.release(op.key);
+        lastSyncError = `Server-Fehler (${err.status}) – deine Änderungen bleiben auf diesem Gerät und werden später nochmal geschickt.`;
+        return 'retry';
+      }
+      // Dauerhaft abgelehnt (z. B. Bild im falschen Format). Text geht trotzdem nicht verloren:
+      // Er wird als eigener Entwurf „(nicht synchronisiert)“ gesichert. Klappt auch das nicht,
+      // bleibt der Eintrag auf dem Gerät und die Synchronisierung wartet.
       console.error('Synchronisieren fehlgeschlagen:', op, err);
-      lastSyncError = `Ein Eintrag konnte nicht synchronisiert werden: ${err.message}`;
+      if ((op.type === 'create' || op.type === 'update') && op.data) {
+        const { baseUpdatedAt, ...data } = op.data;
+        try {
+          remembered(await apiStore.create({ ...data, title: `${data.title || 'Ohne Titel'} (nicht synchronisiert)`, status: 'draft' }));
+        } catch {
+          await outbox.release(op.key);
+          lastSyncError = `Eine Änderung wird vom Server abgelehnt (${err.message}). Sie bleibt auf diesem Gerät gespeichert.`;
+          return 'error';
+        }
+        lastSyncError = `Eine Änderung wurde vom Server abgelehnt (${err.message}) – sie liegt als Entwurf „(nicht synchronisiert)“ daneben.`;
+      } else {
+        lastSyncError = `Ein Eintrag konnte nicht synchronisiert werden: ${err.message}`;
+      }
       await outbox.remove(op.key);
+      notify();
     }
   }
+}
+
+// Eine wartende Änderung senden. Danach bekommen weitere wartende Änderungen am selben
+// Artikel den neuen Stand (outbox.rebase) – sonst würden sie als Konflikt gelten.
+async function sendUpdate(op) {
+  const { baseUpdatedAt, ...data } = op.data;
+  // Folge-Änderung einer Konflikt-Kopie: Titel und Entwurf beibehalten
+  const send = op.conflictCopy
+    ? { ...op.data, title: `${data.title} (Konflikt)`, status: 'draft' }
+    : op.data;
+  let saved;
+  try {
+    saved = await apiStore.update(op.id, send);
+  } catch (err) {
+    if (!(err instanceof HttpError)) throw err;
+    if (err.status === 404) {
+      // Artikel gibt es auf dem Server nicht mehr -> Text nicht verlieren, neu anlegen;
+      // weitere wartende Änderungen gehen an den neuen Artikel
+      const created = remembered(await apiStore.create(data));
+      await outbox.rebase(op.id, baseUpdatedAt, revOf(created), created.id);
+      return;
+    }
+    if (err.status === 409 && sameText(err.current, data)) {
+      // Text steht schon so auf dem Server (z. B. Anfrage kam doppelt an).
+      // Nur der Status ist anders (z. B. offline „Veröffentlichen“ gedrückt)? -> den nachholen
+      saved = sameStatus(err.current, data)
+        ? err.current
+        : await apiStore.update(op.id, { ...send, baseUpdatedAt: revOf(err.current) });
+    } else if (err.status === 409) {
+      // Inzwischen auf einem anderen Gerät geändert -> nichts überschreiben, die Offline-Fassung
+      // als eigenen Entwurf daneben legen. Weitere wartende Änderungen gehen in DIESELBE Kopie.
+      const copy = remembered(await apiStore.create({ ...data, title: `${data.title} (Konflikt)`, status: 'draft' }));
+      await outbox.rebase(op.id, baseUpdatedAt, revOf(copy), copy.id, { conflictCopy: true });
+      lastSyncError = `„${data.title}“ wurde auch auf einem anderen Gerät geändert – deine Fassung liegt als „(Konflikt)“-Entwurf daneben.`;
+      return;
+    } else {
+      throw err;
+    }
+  }
+  remember(saved);
+  await outbox.rebase(op.id, baseUpdatedAt, revOf(saved));
 }
 
 // Offline eingefügte Bilder direkt aus dem Postausgang anzeigen

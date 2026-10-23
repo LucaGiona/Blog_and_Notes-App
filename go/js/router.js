@@ -1,5 +1,13 @@
 // Minimaler Hash-Router: #/  #/new  #/edit/:id  #/post/:id
 
+// Eine Seite darf das Verlassen aufhalten (Editor: Titel fehlt noch).
+// guard(nextHash) gibt false zurück = bleiben; die Seite kümmert sich dann selbst
+// um die Adresse und fragt nach.
+let leaveGuard = null;
+export function setLeaveGuard(fn) {
+  leaveGuard = fn;
+}
+
 export function createRouter(routes, onRoute) {
   let cleanup = null;
 
@@ -20,6 +28,9 @@ export function createRouter(routes, onRoute) {
     location.hash = '#/'; // Unbekannte Route -> Startseite
   }
 
-  window.addEventListener('hashchange', () => resolve());
+  window.addEventListener('hashchange', () => {
+    if (leaveGuard && leaveGuard(location.hash) === false) return;
+    resolve();
+  });
   return { start: () => resolve(), refresh: () => resolve(true) };
 }

@@ -215,6 +215,8 @@ body.logged-in .site-footer { display: none; }
 .nav-status li.is-ok::before { content: "● "; color: var(--published); }
 .status-panel li.is-off::before,
 .nav-status li.is-off::before { content: "○ "; color: var(--accent); }
+.status-panel li.is-version,
+.nav-status li.is-version { opacity: .7; font-size: .72rem; }
 .status-panel li.is-error,
 .nav-status li.is-error { color: var(--accent); }
 .status-panel .btn,
@@ -1016,10 +1018,72 @@ body:has(.timeline) .site-header {
 .scope-filter [data-scope="private"][aria-pressed="true"] { background: var(--private); }
 .scope-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
+/* Über dem Zeitstrahl: links Alle / Öffentlich / Privat, rechts die Reihenfolge */
+.list-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+  margin-bottom: .9rem;
+}
+.list-controls .scope-filter { margin-bottom: 0; }
+.sort-filter {
+  display: inline-flex;
+  margin-left: auto; /* ganz rechts – auch wenn es auf dem Handy in eine eigene Zeile rutscht */
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+.sort-filter button {
+  font-family: var(--mono);
+  font-size: .82rem;
+  padding: .45rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sort-filter button:hover:not([aria-pressed="true"]) { color: var(--text); }
+.sort-filter [aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.sort-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 @media (max-width: 600px) {
   .privacy-toggle { font-size: .8rem; padding: .5rem .85rem; }
   .scope-filter button { font-size: .78rem; padding: .45rem .85rem; }
+  .sort-filter button { font-size: .85rem; padding: .55rem 1rem; }
+  /* Beide Gruppen passen nebeneinander nicht auf ein Handy: untereinander, volle Breite,
+     gleich große Knöpfe */
+  .list-controls { gap: .5rem; }
+  .list-controls .scope-filter,
+  .list-controls .sort-filter { display: flex; width: 100%; margin-left: 0; }
+  .list-controls .scope-filter button,
+  .list-controls .sort-filter button { flex: 1; }
 }
+
+/* ---------- Titel fehlt (beim Verlassen des Editors) ---------- */
+.leave-ask {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / .35);
+}
+.leave-ask[hidden] { display: none; }
+.leave-ask-box {
+  width: min(24rem, 100%);
+  padding: 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgb(0 0 0 / .2);
+}
+.leave-ask-box p { margin: 0 0 1rem; line-height: 1.5; }
+.leave-ask-box strong { display: block; font-family: var(--display); font-size: 1.2rem; margin-bottom: .25rem; }
+.leave-ask-actions { display: grid; gap: .5rem; }
+.leave-ask-actions .btn { justify-content: center; padding: .7rem 1rem; }
 
 /* ---------- Editor als ganze Seite ----------
    Oben fest: Kopf, Titel, Themen, Leiste. Unten fest: Status + Knöpfe.
@@ -1054,6 +1118,8 @@ body.is-editing .editor-preview {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* Etwas Luft unter der letzten Zeile, damit der Cursor nie am unteren Rand angeschnitten wird */
+body.is-editing .editor-body { padding-bottom: 2.5rem; }
 body.is-editing .toolbar { padding: .5rem 0 calc(.6rem + env(safe-area-inset-bottom)); }
 body.is-editing .toolbar .btn { padding: .55rem 1rem; }
 
