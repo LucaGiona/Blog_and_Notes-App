@@ -747,6 +747,9 @@ export async function renderEditor(root, store, id = null) {
   setMenuExtras([
     ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
     { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
+    // Handy: Veröffentlichen steht im Burger vor „Homepage aktualisieren“, nicht unten am Daumen
+    { label: post?.status === 'published' ? 'Aktualisieren' : 'Veröffentlichen',
+      cls: 'nav-publish', status: true, onClick: () => form.requestSubmit() },
   ]);
 
   // ---------- Ganze Seite, Tastatur ----------

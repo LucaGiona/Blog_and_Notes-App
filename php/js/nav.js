@@ -30,10 +30,18 @@ let closeMenu = () => {};
 let closeStatus = () => {};
 let last = null;      // zuletzt gezeichnete Navigation (für setMenuExtras)
 let extras = [];      // Zusatzpunkte der aktuellen Seite, z. B. im Editor „＋ Bild“, „{ } Block“
+let statusShown = false;
+
+/** Punkt für den Status-Bereich im Burger (Editor: Veröffentlichen) oder null */
+export function statusExtra() {
+  return statusShown ? extras.find(x => x.status) ?? null : null;
+}
 
 /**
  * Seitenabhängige Punkte im Burger-Menü (nur auf dem Handy sichtbar, am Laptop
- * stehen sie auf der Seite selbst). items = [{ label, onClick }], [] = keine.
+ * stehen sie auf der Seite selbst). items = [{ label, onClick, cls?, status? }], [] = keine.
+ * status: true = nicht oben, sondern im Status-Bereich vor „Homepage aktualisieren“
+ * (zeichnet main.js). Ohne Status-Bereich (lokaler Testmodus) doch oben.
  */
 export function setMenuExtras(items) {
   extras = items;
@@ -57,6 +65,9 @@ export function renderNav(nav, { onLogout, onRender }) {
   }
 
   const showStatus = auth.loggedIn && !auth.local;
+  statusShown = showStatus;
+  // oben im Menü: alle Zusatzpunkte außer denen für den Status-Bereich (Index bleibt der aus extras)
+  const topExtras = extras.map((x, i) => [x, i]).filter(([x]) => !(showStatus && x.status));
 
   nav.innerHTML = `${showStatus ? `
     <div class="status-wrap">
@@ -69,9 +80,9 @@ export function renderNav(nav, { onLogout, onRender }) {
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Menü öffnen">
       ${ICON_MENU}${ICON_CLOSE}
     </button>
-    <div class="nav-menu" id="nav-menu">${extras.length ? `
-      <div class="nav-extra">${extras.map((x, i) =>
-        `<button type="button" class="btn" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
+    <div class="nav-menu" id="nav-menu">${topExtras.length ? `
+      <div class="nav-extra">${topExtras.map(([x, i]) =>
+        `<button type="button" class="btn${x.cls ? ` ${x.cls}` : ''}" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
       ${items.join('')}
       ${themeMenuItem()}
       ${showStatus ? '<div class="nav-status" id="nav-status" data-status-box aria-live="polite"></div>' : ''}

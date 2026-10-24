@@ -215,6 +215,8 @@ a { color: inherit; }
     border-bottom: 1px solid var(--line);
   }
   .nav-extra .btn { font-family: var(--mono); font-size: .9rem; }
+  /* Editor: Veröffentlichen/Aktualisieren über die ganze Breite, normale Schrift, dezent wie die anderen */
+  .nav-extra .nav-publish { grid-column: 1 / -1; font-family: inherit; font-size: 1rem; }
 }
 /* Angemeldet: Footer-Infos stehen im Status-Feld (Laptop: Knopf oben, Handy: Burger) */
 body.logged-in .site-footer { display: none; }
@@ -826,6 +828,14 @@ body.logged-in .site-footer { display: none; }
 
   /* Unten: gleiche Anordnung wie auf dem Desktop, nur größere Knöpfe */
   .toolbar { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
+  /* Veröffentlichen/Aktualisieren steht auf dem Handy im Burger-Menü – unten nicht mehr am Daumen */
+  .toolbar {
+    grid-template-areas:
+      "alert alert"
+      "status status"
+      "delete draft";
+  }
+  .toolbar [type="submit"] { display: none; }
   .toolbar .btn { justify-content: center; padding: .7rem 1rem; font-size: .95rem; }
 }
 

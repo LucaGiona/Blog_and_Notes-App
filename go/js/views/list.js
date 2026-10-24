@@ -108,8 +108,8 @@ export async function renderList(root, store, auth, activeTag = null) {
               ? '<span class="badge">Entwurf</span>'
               : '<span class="badge badge-published">Veröffentlicht</span>'}
             ${p.pending ? '<span class="badge badge-pending" title="Wird synchronisiert, sobald Netz da ist">nicht synchronisiert</span>' : ''}
-            ${tagLinks(p.tags, activeTag)}
           </div>
+          ${p.tags?.length ? `<div class="tl-flags tl-tags">${tagLinks(p.tags, activeTag)}</div>` : ''}
         </div>
         ${card(p, auth.canEdit)}
       </div>`).join('');

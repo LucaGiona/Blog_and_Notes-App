@@ -11,7 +11,7 @@ import { auth } from './auth.js';
 import { homepage, loadHomepageStatus, requestPublish, flushPublish, homepageLabel } from './homepage.js';
 import { escapeHtml } from './utils.js';
 import { device, isLocalDev } from './device.js';
-import { renderNav } from './nav.js';
+import { renderNav, statusExtra } from './nav.js';
 import { createRouter } from './router.js';
 import { renderList } from './views/list.js';
 import { renderEditor } from './views/editor.js';
@@ -187,9 +187,15 @@ function renderMenuStatus() {
       <button type="button" data-sort="created" aria-pressed="${by === 'created'}">angelegt</button>
       <button type="button" data-sort="updated" aria-pressed="${by === 'updated'}">bearbeitet</button>
     </div>
+    <!--post-publish-->
     ${homepage.configured ? `<button type="button" class="btn" data-menu="publish" ${homepage.busy ? 'disabled' : ''}>Homepage aktualisieren</button>` : ''}
     <button type="button" class="link-button nav-danger" data-menu="logout-all" data-close>Alle Geräte abmelden</button>`;
-  boxes.forEach(box => { box.innerHTML = html; });
+  // Handy-Burger im Editor: „Veröffentlichen“ direkt vor „Homepage aktualisieren“ (am Laptop steht er im Editor)
+  const extra = statusExtra();
+  const postBtn = extra ? `<button type="button" class="btn" data-menu="post-publish">${escapeHtml(extra.label)}</button>` : '';
+  boxes.forEach(box => {
+    box.innerHTML = box.id === 'nav-status' ? html.replace('<!--post-publish-->', postBtn) : html;
+  });
 }
 
 // Welche App-Version läuft? (= VERSION in sw.js, steckt im Namen des Zwischenspeichers.)
@@ -221,6 +227,7 @@ function updateStatusButton() {
 nav.addEventListener('click', e => {
   const action = e.target.closest('[data-menu]')?.dataset.menu;
   if (action === 'publish') requestPublish();
+  if (action === 'post-publish') statusExtra()?.onClick();
   if (action === 'logout-all') logoutAllButton.click(); // gleiche Rückfrage wie im Footer
   const sort = e.target.closest('[data-sort]')?.dataset.sort;
   if (sort && sort !== device.sortBy) {
