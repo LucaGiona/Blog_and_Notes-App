@@ -36,7 +36,7 @@ const isInstalledApp =
 // ---------- PWA ----------
 // Service Worker nur über https oder localhost möglich (Browser-Regel)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service Worker:', err));
+  navigator.serviceWorker.register('sw.js').then(watchForUpdates).catch(err => console.warn('Service Worker:', err));
   // Neue App-Version installiert -> einmal neu laden, damit sie sofort gilt.
   // Nicht mitten im Schreiben: im Editor erst beim nächsten Seitenwechsel.
   const hadController = !!navigator.serviceWorker.controller;
@@ -51,6 +51,25 @@ if ('serviceWorker' in navigator) {
   });
   // kurz warten, damit das Speichern beim Verlassen des Editors noch durchkommt
   window.addEventListener('hashchange', () => setTimeout(reloadIfSafe, 2000));
+}
+
+// Selbst nach Updates suchen. Der Browser prüft sw.js sonst nur beim Start bzw. Neuladen –
+// eine App, die tagelang offen bleibt (Schul-Laptop, Handy im Hintergrund), bliebe auf der
+// alten Version. Darum: beim Zurückkehren zur App und alle 30 Minuten nachsehen.
+// Höchstens alle 5 Minuten, damit nicht jeder Fensterwechsel eine Anfrage über Tailscale macht.
+// Kommt eine neue Version, greift der Neustart oben (im Editor erst beim Verlassen).
+function watchForUpdates(reg) {
+  let lastCheck = Date.now(); // beim Start hat der Browser gerade selbst geprüft
+  const check = () => {
+    if (Date.now() - lastCheck < 5 * 60_000) return;
+    lastCheck = Date.now();
+    reg.update().catch(() => {}); // Server nicht erreichbar -> nächstes Mal
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') check();
+  });
+  window.addEventListener('focus', check);
+  setInterval(check, 30 * 60_000);
 }
 
 // ---------- Start ----------
