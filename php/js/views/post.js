@@ -22,14 +22,19 @@ export async function renderPost(root, store, id, auth) {
     <a href="#/" class="back">← Alle Artikel</a>
     <article class="article">
       <h1>${escapeHtml(post.title)}</h1>
+      <div class="article-info">
       <div class="meta">
-        ${post.private ? '<span class="badge badge-private" title="Nur für dich sichtbar">🔒 Privat</span>' : ''}
-        ${post.status === 'draft' ? '<span class="badge">Entwurf</span>' : ''}
         <time datetime="${post.createdAt || post.updatedAt}" title="angelegt ${formatDateTime(post.createdAt || post.updatedAt)}">${formatDate(post.createdAt || post.updatedAt)}</time>
         ${post.createdAt && !sameMinute(post.createdAt, post.updatedAt)
           ? `<span class="edited">bearbeitet <time datetime="${post.updatedAt}">${formatDateTime(post.updatedAt)}</time></span>` : ''}
       </div>
+      ${post.private || post.status === 'draft' ? `
+        <div class="article-flags">
+          ${post.private ? '<span class="badge badge-private" title="Nur für dich sichtbar">🔒 Privat</span>' : ''}
+          ${post.status === 'draft' ? '<span class="badge">Entwurf</span>' : ''}
+        </div>` : ''}
       ${post.tags?.length ? `<div class="article-tags">${tagLinks(post.tags)}</div>` : ''}
+      </div>
       <div class="article-body md">${renderMarkdown(post.body)}</div>
       ${auth.canEdit ? `
         <div class="article-actions">

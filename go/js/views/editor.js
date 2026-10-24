@@ -36,11 +36,13 @@ export async function renderEditor(root, store, id = null) {
       </div>
 
       <div class="tag-picker" role="group" aria-label="Themen">
+        <div class="tag-actions">
+          <input class="tag-input" placeholder="+ Thema" maxlength="30" enterkeyhint="done"
+            aria-label="Neues Thema (Enter zum Hinzufügen)">
+          ${typeof store.renameTag === 'function' ? `
+            <button type="button" class="tag-manage" aria-pressed="false" title="Themen umbenennen oder löschen">✎ Themen</button>` : ''}
+        </div>
         <div class="tag-options"></div>
-        <input class="tag-input" placeholder="+ Thema" maxlength="30" enterkeyhint="done"
-          aria-label="Neues Thema (Enter zum Hinzufügen)">
-        ${typeof store.renameTag === 'function' ? `
-          <button type="button" class="tag-manage" aria-pressed="false" title="Themen umbenennen oder löschen">✎ Themen</button>` : ''}
       </div>
 
       <div class="format-bar" role="toolbar" aria-label="Formatieren">
@@ -770,8 +772,23 @@ export async function renderEditor(root, store, id = null) {
   // „Tippen“-Ansicht: Textfeld hat den Fokus und es ist eng (Handy mit Tastatur)
   const updateTyping = () => {
     const tight = (vv?.height ?? window.innerHeight) < 560;
-    document.body.classList.toggle('is-typing', tight && document.activeElement === body);
+    const typing = tight && document.activeElement === body;
+    if (typing) headerTitle.textContent = title.value.trim() || 'Ohne Titel';
+    document.body.classList.toggle('is-typing', typing);
   };
+
+  // Beim Tippen steht der Titel oben in der Kopfzeile: Blog · Titel · ☰. Die Zeile mit
+  // Titelfeld und Privat-Schalter ist dann ausgeblendet (CSS), der Burger mit Bild/Block bleibt
+  // erreichbar. Antippen -> zurück ins Titelfeld (dabei kommt alles wieder).
+  const headerTitle = document.createElement('button');
+  headerTitle.type = 'button';
+  headerTitle.className = 'header-title';
+  headerTitle.title = 'Titel bearbeiten';
+  headerTitle.addEventListener('click', () => {
+    document.body.classList.remove('is-typing'); // erst einblenden, sonst lässt sich das Feld nicht fokussieren
+    title.focus();
+  });
+  document.querySelector('.site-header .brand')?.after(headerTitle);
   vv?.addEventListener('resize', fit);
   vv?.addEventListener('scroll', fit);
   body.addEventListener('focus', updateTyping);
@@ -783,6 +800,7 @@ export async function renderEditor(root, store, id = null) {
     vv?.removeEventListener('resize', fit);
     vv?.removeEventListener('scroll', fit);
     document.body.classList.remove('is-editing', 'is-typing');
+    headerTitle.remove();
     html.style.removeProperty('--vv-h');
     html.style.removeProperty('--vv-top');
     autosave.cancel();

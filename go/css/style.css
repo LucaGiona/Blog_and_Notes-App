@@ -19,33 +19,35 @@
   --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --code-bg: #24211d;
+  --code-bg: #3a3631;
   --code-text: #ece8e1;
-  --code-head: #322e29;
+  --code-head: #45403a;
   --inline-code-bg: #f0ebe2;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #171614;
-    --surface: #211f1c;
-    --text: #ece8e1;
-    --muted: #a39d93;
-    --line: #34312c;
-    --line-strong: #5a554c;
-    --accent: #e0714f;
-    --accent-text: #1a1210;
-    --draft: #e8c869;
-    --draft-bg: #3a3220;
-    --published: #93d3a0;
-    --published-bg: #1f3324;
-    --private: #c4b5f0;
-    --private-bg: #2c2540;
-    --shadow: none;
-    --code-bg: #12110f;
-    --code-head: #1c1a17;
-    --inline-code-bg: #2c2925;
-  }
+:root { color-scheme: light; }
+
+/* Dunkel – Standard (js/theme.js setzt data-theme, bevor die Seite gezeichnet wird) */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171614;
+  --surface: #211f1c;
+  --text: #ece8e1;
+  --muted: #a39d93;
+  --line: #34312c;
+  --line-strong: #5a554c;
+  --accent: #e0714f;
+  --accent-text: #1a1210;
+  --draft: #e8c869;
+  --draft-bg: #3a3220;
+  --published: #93d3a0;
+  --published-bg: #1f3324;
+  --private: #c4b5f0;
+  --private-bg: #2c2540;
+  --shadow: none;
+  --code-bg: #2a2723;
+  --code-head: #34302b;
+  --inline-code-bg: #2c2925;
 }
 
 /* ---------- Basis ---------- */
@@ -157,6 +159,29 @@ a { color: inherit; }
 .nav-toggle .icon-close,
 .nav.is-open .nav-toggle .icon-open { display: none; }
 .nav.is-open .nav-toggle .icon-close { display: block; }
+
+/* Hell/Dunkel: rundes Icon in der Kopfzeile (Mond = auf dunkel schalten, Sonne = auf hell).
+   Im Burger-Menü (Handy) als Knopf mit Text. */
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--line-strong); }
+.theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.icon-sun, .label-light { display: none; }
+:root[data-theme="dark"] .icon-sun,
+:root[data-theme="dark"] .label-light { display: inline; }
+:root[data-theme="dark"] .icon-moon,
+:root[data-theme="dark"] .label-dark { display: none; }
+.nav-theme { display: none; }
 
 /* Handy: Knöpfe ins Burger-Menü */
 @media (max-width: 600px) {
@@ -305,6 +330,10 @@ body.logged-in .site-footer { display: none; }
 /* Handy: kein Knopf oben – Status steht im Burger-Menü */
 @media (max-width: 600px) {
   .status-wrap { display: none; }
+  /* Mit Burger steht Hell/Dunkel im Menü, oben nur Blog und Burger */
+  .theme-toggle.has-menu { display: none; }
+  .nav-theme { display: flex; justify-content: center; gap: .5rem; }
+  .nav-theme svg { vertical-align: -3px; }
   .nav-status {
     margin-top: .25rem;
     padding-top: .75rem;
@@ -361,7 +390,10 @@ body.logged-in .site-footer { display: none; }
 .excerpt { margin: .8rem 0 0; color: var(--muted); }
 
 /* Themen unter dem Datum in der Artikelansicht */
-.article-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin: -1.25rem 0 2rem; }
+/* Artikel: Datum, darunter Privat/Entwurf, darunter die Themen */
+.article-info { display: flex; flex-direction: column; align-items: flex-start; gap: .6rem; margin-bottom: 2rem; }
+.article-flags,
+.article-tags { display: flex; flex-wrap: wrap; gap: .35rem; }
 
 /* ---------- Der Blur-Effekt für Entwürfe ---------- */
 .badge {
@@ -505,7 +537,6 @@ body.logged-in .site-footer { display: none; }
   line-height: 1.15;
   margin: 0 0 .5rem;
 }
-.article .meta { margin-bottom: 2rem; }
 .article-body { /* Gestaltung kommt von .md */ }
 .article-actions { margin-top: 2.5rem; display: flex; gap: .5rem; }
 
@@ -827,9 +858,11 @@ body.logged-in .site-footer { display: none; }
 .tag-filter { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: 1.5rem; }
 .tag-filter .tag:first-child::before { content: none; } /* „Alle“ ohne # */
 
-/* Auswahl im Editor */
-.tag-picker { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
-.tag-options { display: contents; }
+/* Auswahl im Editor: oben „+ Thema“ und „✎ Themen“ nebeneinander, darunter die Themen */
+.tag-picker { display: flex; flex-direction: column; gap: .5rem; }
+.tag-actions { display: flex; gap: .4rem; align-items: center; }
+.tag-options { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.tag-options:empty { display: none; }
 .tag-picker .tag { font-size: .75rem; padding: .4rem .7rem; }
 .tag-input {
   font-family: var(--mono);
@@ -1124,15 +1157,40 @@ body.is-editing .toolbar { padding: .5rem 0 calc(.6rem + env(safe-area-inset-bot
 body.is-editing .toolbar .btn { padding: .55rem 1rem; }
 
 /* Beim Tippen auf kleinen Bildschirmen (Tastatur offen): alles Unwichtige weg,
-   damit möglichst viel Text sichtbar ist. Titel bleibt, Knöpfe in einer Zeile. */
-body.is-typing .site-header,
+   damit möglichst viel Text sichtbar ist. Oben eine flache Zeile Blog · Titel · ☰
+   (der Burger bleibt, dort stehen Bild und Block), Knöpfe unten in einer Zeile. */
+.header-title { display: none; }
+body.is-typing .site-header {
+  gap: .6rem;
+  padding-top: calc(.4rem + env(safe-area-inset-top));
+  padding-bottom: .4rem;
+}
+body.is-typing .brand { font-size: 1.05rem; border-width: 1.5px; border-radius: 6px; }
+body.is-typing .nav-toggle { width: 34px; height: 34px; }
+body.is-typing .header-title {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: .2rem 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: text;
+}
+body.is-typing .header-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+body.is-typing .title-field,
 body.is-typing .tag-picker,
 body.is-typing .format-bar,
 body.is-typing .md-hint { display: none; }
 body.is-typing #app { padding-top: .5rem; }
 body.is-typing .editor { gap: .4rem; }
-body.is-typing .editor-title { font-size: 1.25rem; padding: 0; }
-body.is-typing .title-field .privacy-toggle { font-size: .7rem; padding: .3rem .6rem; }
 body.is-typing .toolbar {
   grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
@@ -1146,26 +1204,13 @@ body.is-typing .toolbar .btn { padding: .45rem .8rem; font-size: .85rem; }
 
 /* Handy: Themen in einer Zeile zum Wischen statt mehrerer Zeilen */
 @media (max-width: 600px) {
-  body.is-editing .tag-picker {
+  body.is-editing .tag-options {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     margin: 0 -1rem;
     padding: 0 1rem;
   }
-  body.is-editing .tag-picker::-webkit-scrollbar { display: none; }
-  body.is-editing .tag-picker > * { flex: none; }
-  body.is-editing .tag-options { display: flex; flex-wrap: nowrap; gap: .4rem; }
+  body.is-editing .tag-options::-webkit-scrollbar { display: none; }
+  body.is-editing .tag-options > * { flex: none; }
 }
-
-/* Anmeldeseite: Hinweis, solange noch kein Benutzer angelegt ist */
-.login-setup {
-  font-size: .9rem;
-  line-height: 1.5;
-  padding: .8rem 1rem;
-  border-radius: 8px;
-  background: var(--draft-bg);
-  color: var(--text);
-}
-.login-setup strong { display: block; margin-bottom: .25rem; }
-.login-setup code { font-family: var(--mono); font-size: .85em; white-space: nowrap; }

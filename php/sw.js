@@ -16,7 +16,7 @@
 //
 // Wichtig: Bei Änderungen an der Liste unten VERSION erhöhen.
 
-const VERSION = 'v26';
+const VERSION = 'v30';
 const SHELL = `notizblog-shell-${VERSION}`;
 const API = 'notizblog-api';      // Artikel – wird beim Abmelden gelöscht
 const IMAGES = 'notizblog-img';
@@ -41,6 +41,7 @@ const SHELL_FILES = [
   'css/fonts.css',
   'css/style.css',
   'js/main.js',
+  'js/theme.js',
   'js/router.js',
   'js/utils.js',
   'js/markdown.js',

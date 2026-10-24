@@ -14,6 +14,18 @@ import { auth } from './auth.js';
 const ICON_MENU = `<svg class="icon-open" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>`;
 const ICON_CLOSE = `<svg class="icon-close" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 
+const ICON_MOON = `<svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>`;
+const ICON_SUN = `<svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+
+// Hell/Dunkel (umgeschaltet wird in js/theme.js). Icon zeigt, wohin es geht: Mond = dunkel machen.
+const isDark = () => (window.notizblogTheme?.get() ?? 'dark') === 'dark';
+const themeIcon = hasMenu => `
+  <button type="button" class="theme-toggle${hasMenu ? ' has-menu' : ''}" data-theme-toggle
+    aria-pressed="${isDark()}" aria-label="Dunkler Modus" title="Hell / Dunkel">${ICON_MOON}${ICON_SUN}</button>`;
+const themeMenuItem = () => `
+  <button type="button" class="btn nav-theme" data-theme-toggle data-keep-open aria-pressed="${isDark()}">
+    ${ICON_MOON}${ICON_SUN}<span class="label-dark">Dunkel</span><span class="label-light">Hell</span></button>`;
+
 let closeMenu = () => {};
 let closeStatus = () => {};
 let last = null;      // zuletzt gezeichnete Navigation (für setMenuExtras)
@@ -38,7 +50,9 @@ export function renderNav(nav, { onLogout, onRender }) {
   if (auth.loggedIn && !auth.local) items.push(`<button type="button" class="btn btn-ghost" data-action="logout">Abmelden</button>`);
 
   if (items.length === 0) {
-    nav.innerHTML = '';
+    // Besucher: kein Menü, nur Hell/Dunkel
+    nav.innerHTML = themeIcon(false);
+    closeMenu = () => {};
     return;
   }
 
@@ -51,6 +65,7 @@ export function renderNav(nav, { onLogout, onRender }) {
       </button>
       <div class="status-panel" id="status-panel" data-status-box aria-live="polite" hidden></div>
     </div>` : ''}
+    ${themeIcon(true)}
     <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="nav-menu" aria-label="Menü öffnen">
       ${ICON_MENU}${ICON_CLOSE}
     </button>
@@ -58,6 +73,7 @@ export function renderNav(nav, { onLogout, onRender }) {
       <div class="nav-extra">${extras.map((x, i) =>
         `<button type="button" class="btn" data-extra="${i}">${x.label}</button>`).join('')}</div>` : ''}
       ${items.join('')}
+      ${themeMenuItem()}
       ${showStatus ? '<div class="nav-status" id="nav-status" data-status-box aria-live="polite"></div>' : ''}
     </div>`;
 
