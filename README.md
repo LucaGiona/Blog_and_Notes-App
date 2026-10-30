@@ -28,9 +28,9 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
   Text. Auf dem Handy mit offener Tastatur bleiben nur Titel, Text und eine Knopfzeile.
   Fehlt beim Verlassen der Titel, fragt der Editor nach (Titel eingeben oder „Ohne Titel“);
   wird die App weggewischt, wird der Text als „Ohne Titel“ gesichert.
-- **🔒 Privat / 🌐 Öffentlich** – neue Artikel sind privat. Private Artikel bekommt ein Besucher
-  gar nicht zu sehen (kein Titel, kein Eintrag). Öffentliche Entwürfe zeigen nur den Titel,
-  der Text ist verschwommen.
+- **🔒 Privat / 🌐 Öffentlich** – neue Artikel sind privat. Private Entwürfe bekommt ein Besucher
+  gar nicht zu sehen (kein Titel, kein Eintrag); private, aber veröffentlichte Artikel und
+  öffentliche Entwürfe zeigen nur den Titel, der Text ist verschwommen.
 - **Themen** (Tags), beliebig kombinierbar, mit Filter; umbenennen und löschen in allen Artikeln.
 - **Zeitstrahl** als Startseite, Artikel steigen beim Scrollen auf. Sortiert danach, wann ein
   Artikel angelegt wurde – Knöpfe „angelegt / bearbeitet“ rechts über dem Zeitstrahl; die ganze
@@ -193,7 +193,8 @@ blog-data/uploads/       genau die Bilder, die diese Artikel verwenden
 | --- | --- |
 | 🌐 öffentlich + veröffentlicht | vollständig |
 | 🌐 öffentlich + Entwurf | nur Titel, Datum, Themen (`body` leer) |
-| 🔒 privat | gar nicht |
+| 🔒 privat + veröffentlicht | nur Titel, Datum, Themen (`body` leer, `"private": true`) |
+| 🔒 privat + Entwurf | gar nicht |
 
 Jeder Eintrag: `{id, title, status, body, tags, createdAt, updatedAt}`; `body` ist Markdown,
 Bilder darin heißen `uploads/<name>` (auf der Website also unter `blog-data/uploads/`).
@@ -219,6 +220,9 @@ auf dem Handy im Burger-Menü unter „Status“) stehen Stand und Fehler, dazu 
 - Gepusht wird der gerade ausgecheckte Branch – samt anderer, noch nicht gepushter Commits.
 - git fragt nie nach einem Passwort; Pushen muss auf dem Rechner also schon ohne Rückfrage gehen.
 - Was einmal gepusht war, bleibt in der Git-Geschichte der Website.
+- Website ohne git beim selben Hoster: Ist der Ordner **kein** Git-Repo, schreibt der Export direkt
+  hinein (kein commit/push) – die Dateien sind sofort online. Der Pfad darf relativ zum Blog-Ordner
+  sein, z. B. `echo ../httpdocs > data/homepage-path`.
 - Ausschalten: `data/homepage-path` löschen.
 
 ### Beim Hoster (PHP)
@@ -271,7 +275,7 @@ dazu `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | POST | api/logout | abmelden (dieses Gerät) |
 | POST | api/logout-all | alle Geräte abmelden 🔒 |
 | GET | api/me | angemeldet? |
-| GET | api/posts | alle Artikel (Gäste: ohne private, Entwürfe ohne Text) |
+| GET | api/posts | alle Artikel (Gäste: ohne private Entwürfe; Entwürfe und private ohne Text) |
 | GET | api/posts/:id | ein Artikel (Gäste: nur veröffentlichte, nicht private) |
 | POST | api/posts | neuer Artikel 🔒 `{title, body, status, tags[], private, createdAt?, clientId?}` – ohne `private`: privat; `createdAt` = Schreibzeit (offline geschrieben); gleiche `clientId` (`local-…`) → derselbe Artikel statt eines neuen |
 | PUT | api/posts/:id | ändern 🔒 – `baseUpdatedAt` = bekannter `rev`; veraltet → 409 + `current` |
@@ -330,8 +334,9 @@ No framework, no build step, no dependencies. The user interface is in German.
   in between. On a phone with the keyboard open, only title, text and one row of buttons remain.
   If the title is missing when leaving, the editor asks (enter a title or save as “Ohne Titel”);
   if the app is swiped away, the text is saved as “Ohne Titel”.
-- **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private posts
-  (no title, no entry). Public drafts show only the title; the text is blurred.
+- **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private drafts
+  (no title, no entry); private but published posts and public drafts show only the title,
+  the text is blurred.
 - **Topics** (tags), freely combinable, with a filter; rename or delete across all posts.
 - **Timeline** as the start page; posts rise into view while scrolling. Sorted by when a post
   was created – “angelegt / bearbeitet” (created / edited) buttons at the top right of the
@@ -493,7 +498,8 @@ blog-data/uploads/       exactly the images these posts use
 | --- | --- |
 | 🌐 public + published | complete |
 | 🌐 public + draft | title, date, topics only (`body` empty) |
-| 🔒 private | not at all |
+| 🔒 private + published | title, date, topics only (`body` empty, `"private": true`) |
+| 🔒 private + draft | not at all |
 
 Each entry: `{id, title, status, body, tags, createdAt, updatedAt}`; `body` is Markdown,
 images in it are referenced as `uploads/<name>` (so on the website under `blog-data/uploads/`).
@@ -519,6 +525,9 @@ on phones: burger menu → “Status”) shows status and errors, plus a “Home
 - The branch that is currently checked out is pushed – including other commits not yet pushed.
 - git never asks for a password, so pushing must already work without a prompt on the computer.
 - Whatever was pushed once stays in the website's Git history.
+- Website without git on the same host: if the folder is **not** a Git repo, the export writes
+  straight into it (no commit/push) – the files are live right away. The path may be relative to
+  the blog folder, e.g. `echo ../httpdocs > data/homepage-path`.
 - To turn it off: delete `data/homepage-path`.
 
 ### At a web host (PHP)
@@ -571,7 +580,7 @@ plus `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | POST | api/logout | sign out (this device) |
 | POST | api/logout-all | sign out all devices 🔒 |
 | GET | api/me | signed in? |
-| GET | api/posts | all posts (guests: without private ones, drafts without text) |
+| GET | api/posts | all posts (guests: without private drafts; drafts and private posts without text) |
 | GET | api/posts/:id | one post (guests: published and non-private only) |
 | POST | api/posts | new post 🔒 `{title, body, status, tags[], private, createdAt?, clientId?}` – without `private`: private; `createdAt` = time written (offline); same `clientId` (`local-…`) → the same post instead of a new one |
 | PUT | api/posts/:id | update 🔒 – `baseUpdatedAt` = known `rev`; outdated → 409 + `current` |

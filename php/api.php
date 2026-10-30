@@ -88,7 +88,7 @@ try {
         if ($method === 'GET') {
             $posts = $store->list();
             if (!$auth->loggedIn()) {
-                $posts = array_map('forGuest', array_values(array_filter($posts, 'isPublic')));
+                $posts = array_map('forGuest', array_values(array_filter($posts, 'visibleToGuest')));
             }
             json(200, $posts);
         }
@@ -136,16 +136,23 @@ try {
     json(500, ['error' => 'Interner Fehler']);
 }
 
-// Private Artikel sieht nur der angemeldete Nutzer – Besucher erfahren nicht einmal, dass es sie gibt.
+// Öffentlich = nicht privat.
 function isPublic(array $post): bool
 {
     return empty($post['private']);
 }
 
-// Entfernt den Text von Entwürfen – so steht er nirgends im Browser.
+// Was Besucher in der Liste sehen: alles Öffentliche und private Artikel, die
+// veröffentlicht sind (nur Titel, Text verschwommen). Private Entwürfe bleiben unsichtbar.
+function visibleToGuest(array $post): bool
+{
+    return isPublic($post) || ($post['status'] ?? '') === 'published';
+}
+
+// Entfernt den Text von Entwürfen und privaten Artikeln – so steht er nirgends im Browser.
 function forGuest(array $post): array
 {
-    if ($post['status'] === 'draft') {
+    if ($post['status'] === 'draft' || !isPublic($post)) {
         $post['body'] = '';
         $post['locked'] = true;
     }

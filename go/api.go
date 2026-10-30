@@ -110,7 +110,7 @@ func route(w http.ResponseWriter, r *http.Request) {
 			if currentUser(r) == "" {
 				guest := []Post{}
 				for _, p := range posts {
-					if isPublic(p) {
+					if visibleToGuest(p) {
 						guest = append(guest, forGuest(p))
 					}
 				}
@@ -169,15 +169,21 @@ func firstTag(raw json.RawMessage) string {
 	return ""
 }
 
-// Private Artikel sieht nur der angemeldete Nutzer – Besucher erfahren nicht einmal, dass es sie gibt.
+// Öffentlich = nicht privat.
 func isPublic(p Post) bool {
 	v, ok := p["private"]
 	return !ok || v == nil || v == false
 }
 
-// Entfernt den Text von Entwürfen – so steht er nirgends im Browser.
+// Was Besucher in der Liste sehen: alles Öffentliche und private Artikel, die
+// veröffentlicht sind (nur Titel, Text verschwommen). Private Entwürfe bleiben unsichtbar.
+func visibleToGuest(p Post) bool {
+	return isPublic(p) || p["status"] == "published"
+}
+
+// Entfernt den Text von Entwürfen und privaten Artikeln – so steht er nirgends im Browser.
 func forGuest(p Post) Post {
-	if p["status"] != "draft" {
+	if p["status"] != "draft" && isPublic(p) {
 		return p
 	}
 	copy := Post{}

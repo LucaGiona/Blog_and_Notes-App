@@ -410,7 +410,8 @@ body.logged-in .site-footer { display: none; }
   color: var(--draft);
 }
 
-.card.is-draft .excerpt {
+.card.is-draft .excerpt,
+.card.is-locked .excerpt {
   filter: blur(5px);
   user-select: none;
   -webkit-mask-image: linear-gradient(to bottom, #000 40%, transparent);
@@ -424,7 +425,7 @@ body.logged-in .site-footer { display: none; }
           mask-image: none;
 }
 
-/* Gesperrte Entwürfe (Gäste): nicht klickbar, Platzhaltertext */
+/* Gesperrte Entwürfe und private Artikel (Gäste): nicht klickbar, Platzhaltertext */
 .card.is-locked { cursor: default; }
 
 /* ---------- Leerer Zustand ---------- */

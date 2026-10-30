@@ -34,6 +34,10 @@ if ($push) {
         fwrite(STDERR, "Fehlgeschlagen: {$r['error']}\n");
         exit(1);
     }
+    if (!empty($r['direct'])) {
+        echo $r['changed'] ? "Direkt in die Homepage geschrieben (kein git-Ordner).\n" : "Keine Änderung.\n";
+        exit(0);
+    }
     echo $r['changed'] ? "Neuer Stand committet" : "Keine Änderung";
     echo $r['pushed'] ? " und gepusht (Branch {$r['branch']}).\n" : ", nichts zu pushen.\n";
     exit(0);

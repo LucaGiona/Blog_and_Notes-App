@@ -349,7 +349,7 @@ function serverChecked() {
   updateNav();
   updateStatus();
   if (!auth.loggedIn) {
-    // Anmeldung abgelaufen: Liste ohne private Artikel zeigen. Im Editor bleiben
+    // Anmeldung abgelaufen: Liste wie für Besucher zeigen (private nur als Titel). Im Editor bleiben
     // (sonst wäre ungespeicherter Text weg) – Speichern meldet dann „Nicht angemeldet“.
     if (!/^#\/(new|edit\/)/.test(location.hash)) router.refresh();
     return;

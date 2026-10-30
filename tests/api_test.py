@@ -134,16 +134,22 @@ b = step('öffentlich + veröffentlicht, Themen bereinigt', *call(owner, 'POST',
     lambda p: p['tags'] == ['Pflege', 'Gedanken', 'Mehr Leer'] and p['private'] is False)
 c = step('öffentlicher Entwurf', *call(owner, 'POST', '/api/posts', {
     'title': 'Drei', 'body': 'Geheimer Entwurfstext', 'status': 'draft', 'private': False})[:2], 201)
+v = step('privat + veröffentlicht', *call(owner, 'POST', '/api/posts', {
+    'title': 'Vier', 'body': 'Privater Text', 'status': 'published', 'private': True})[:2], 201)
 step('acht Themen höchstens', *call(owner, 'POST', '/api/posts', {
     'title': 'Viele', 'body': '', 'status': 'draft', 'tags': [f'T{i}' for i in range(12)]})[:2], 201,
     lambda p: len(p['tags']) == 8)
 
-step('Liste angemeldet', *call(owner, 'GET', '/api/posts')[:2], 200, lambda p: len(p) == 4)
-guest_list = step('Liste Gast: ohne private, Entwurf ohne Text', *call(guest, 'GET', '/api/posts')[:2], 200,
-                  lambda p: sorted(x['title'] for x in p) == ['Drei', 'Zwei']
+step('Liste angemeldet', *call(owner, 'GET', '/api/posts')[:2], 200, lambda p: len(p) == 5)
+guest_list = step('Liste Gast: ohne private Entwürfe, Entwurf/privat ohne Text', *call(guest, 'GET', '/api/posts')[:2], 200,
+                  lambda p: sorted(x['title'] for x in p) == ['Drei', 'Vier', 'Zwei']
                   and [x for x in p if x['title'] == 'Drei'][0]['body'] == ''
-                  and [x for x in p if x['title'] == 'Drei'][0]['locked'] is True)
+                  and [x for x in p if x['title'] == 'Drei'][0]['locked'] is True
+                  and [x for x in p if x['title'] == 'Vier'][0]['body'] == ''
+                  and [x for x in p if x['title'] == 'Vier'][0]['locked'] is True
+                  and [x for x in p if x['title'] == 'Vier'][0]['private'] is True)
 step('Gast: privater Artikel 404', *call(guest, 'GET', f"/api/posts/{a['id']}")[:2], 404)
+step('Gast: privat + veröffentlicht einzeln 404', *call(guest, 'GET', f"/api/posts/{v['id']}")[:2], 404)
 step('Gast: Entwurf einzeln 404', *call(guest, 'GET', f"/api/posts/{c['id']}")[:2], 404)
 step('Gast: veröffentlicht 200', *call(guest, 'GET', f"/api/posts/{b['id']}")[:2], 200, lambda p: p['body'] == 'Hallo')
 step('unbekannter Artikel 404', *call(owner, 'GET', '/api/posts/gibtsnicht')[:2], 404)
@@ -217,13 +223,16 @@ if HOMEPAGE:
         f.write(HOMEPAGE + '\n')
     step('Homepage: eingestellt', *call(owner, 'GET', '/api/homepage')[:2], 200, lambda p: p['configured'] is True and p['last'] is None)
     step('Homepage: veröffentlichen', *call(owner, 'POST', '/api/homepage/publish', {})[:2], 200,
-         lambda p: p['ok'] and p['changed'] and p['pushed'] and p['summary']['published'] == 1 and p['summary']['private'] == 2
+         lambda p: p['ok'] and p['changed'] and p['pushed'] and p['summary']['published'] == 1 and p['summary']['private'] == 3
          and p['summary']['draft'] == 1 and p['summary']['copied'] == 1)
     step('Homepage: ohne Änderung', *call(owner, 'POST', '/api/homepage/publish', {})[:2], 200,
          lambda p: p['ok'] and not p['changed'] and not p['pushed'])
     with open(os.path.join(HOMEPAGE, 'blog-data', 'posts.json')) as f:
         step('Homepage: Export-Datei', 200, json.load(f), 200,
-             lambda p: [x['title'] for x in p] == ['Zwei', 'Drei'] and p[1]['body'] == '')
+             lambda p: sorted(x['title'] for x in p) == ['Drei', 'Vier', 'Zwei']
+             and all(x['body'] == '' for x in p if x['title'] in ('Drei', 'Vier'))
+             and [x for x in p if x['title'] == 'Vier'][0].get('private') is True
+             and 'private' not in [x for x in p if x['title'] == 'Zwei'][0])
     step('Homepage: Status gemerkt', *call(owner, 'GET', '/api/homepage')[:2], 200, lambda p: p['last']['ok'] is True)
 
 # ---------- Schreibzeit offline geschriebener Artikel ----------

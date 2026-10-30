@@ -52,5 +52,9 @@ func homepageDir() string {
 			dir = strings.TrimSpace(string(b))
 		}
 	}
+	// Relativ (z. B. "../httpdocs") = vom Blog-Ordner aus gesehen
+	if dir != "" && !filepath.IsAbs(dir) {
+		dir = filepath.Join(rootDir, dir)
+	}
 	return strings.TrimRight(dir, "/")
 }

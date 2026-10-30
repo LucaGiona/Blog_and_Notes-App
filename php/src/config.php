@@ -22,6 +22,10 @@ define('HOMEPAGE_PATH_FILE',   DATA_DIR . '/homepage-path');
 define('HOMEPAGE_STATUS_FILE', DATA_DIR . '/homepage-status.json');
 define('HOMEPAGE_DIR', (function (): string {
     $dir = getenv('NOTIZBLOG_HOMEPAGE') ?: (is_file(HOMEPAGE_PATH_FILE) ? trim((string)file_get_contents(HOMEPAGE_PATH_FILE)) : '');
+    // Relativ (z. B. "../httpdocs" beim Hoster) = vom Blog-Ordner aus gesehen
+    if ($dir !== '' && $dir[0] !== '/') {
+        $dir = dirname(__DIR__) . '/' . $dir;
+    }
     return rtrim($dir, '/');
 })());
 const PUBLISH_TIMEOUT = 45; // Sekunden für git push, danach Abbruch

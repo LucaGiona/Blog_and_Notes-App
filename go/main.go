@@ -173,6 +173,14 @@ func cmdExport(args []string) {
 		if r["ok"] != true {
 			log.Fatalf("Fehlgeschlagen: %v", r["error"])
 		}
+		if r["direct"] == true {
+			if r["changed"] == true {
+				fmt.Println("Direkt in die Homepage geschrieben (kein git-Ordner).")
+			} else {
+				fmt.Println("Keine Änderung.")
+			}
+			return
+		}
 		msg := "Keine Änderung"
 		if r["changed"] == true {
 			msg = "Neuer Stand committet"

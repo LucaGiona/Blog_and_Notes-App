@@ -1,6 +1,6 @@
 // Startseite: alle Artikel als Zeitstrahl. Entwürfe zeigen nur den Titel, der Text ist verschwommen.
-// Für Gäste schickt der Server bei Entwürfen gar keinen Text (locked) –
-// dann wird ein Platzhalter verschwommen angezeigt.
+// Für Gäste schickt der Server bei Entwürfen und privaten (veröffentlichten) Artikeln gar keinen
+// Text (locked) – dann wird ein Platzhalter verschwommen angezeigt.
 
 import { escapeHtml, formatDate, formatDateTime, excerpt, sortTime, sameMinute } from '../utils.js';
 import { device } from '../device.js';
@@ -11,6 +11,9 @@ import { revealOnScroll } from '../reveal.js';
 const PLACEHOLDER =
   'Dieser Artikel ist noch in Arbeit. Hier entsteht gerade ein neuer Text, ' +
   'der bald fertig geschrieben und veröffentlicht wird. Schau später wieder vorbei.';
+const PRIVATE_PLACEHOLDER =
+  'Dieser Artikel ist privat. Den Titel darf jeder sehen, der Text selbst bleibt ' +
+  'beim Verfasser. Vielleicht wird er eines Tages öffentlich – bis dahin bleibt er verschwommen.';
 
 // activeTag: nur Artikel mit diesem Thema zeigen (Route #/thema/…)
 export async function renderList(root, store, auth, activeTag = null) {
@@ -65,7 +68,7 @@ export async function renderList(root, store, auth, activeTag = null) {
     const by = device.sortBy;
     posts.sort((a, b) => sortTime(b, by).localeCompare(sortTime(a, by)));
 
-    // Nur angemeldet: Alle / Öffentlich / Privat (Besucher bekommen private Artikel gar nicht)
+    // Nur angemeldet: Alle / Öffentlich / Privat (Besucher sehen private nur als Titel, private Entwürfe gar nicht)
     const view = auth.canEdit ? scope : 'all'; // nach dem Abmelden nicht versehentlich weiterfiltern
     const inScope = posts.filter(p =>
       view === 'public' ? !p.private : view === 'private' ? !!p.private : true);
@@ -103,7 +106,7 @@ export async function renderList(root, store, auth, activeTag = null) {
         <div class="tl-meta">
           <time datetime="${sortTime(p, by)}" title="${timesTitle(p)}">${formatDate(sortTime(p, by))}</time>
           <div class="tl-flags">
-            ${p.private ? '<span class="badge badge-private" title="Nur für dich sichtbar">🔒 Privat</span>' : ''}
+            ${p.private ? `<span class="badge badge-private" title="${auth.canEdit ? 'Text nur für dich sichtbar' : 'Privat – nur der Titel ist öffentlich'}">🔒 Privat</span>` : ''}
             ${p.status === 'draft'
               ? '<span class="badge">Entwurf</span>'
               : '<span class="badge badge-published">Veröffentlicht</span>'}
@@ -186,7 +189,8 @@ function growLine(list) {
 // Die Karte selbst: Titel + Anriss (Datum, Status, Themen stehen an der Linie)
 function card(post, canEdit) {
   const isDraft = post.status === 'draft';
-  const locked = isDraft && !canEdit;
+  // Gäste: Entwürfe und private Artikel nur als Titel, Text verschwommen, nicht klickbar
+  const locked = (isDraft || !!post.private) && !canEdit;
   const title = escapeHtml(post.title || 'Ohne Titel');
 
   // Entwürfe öffnen den Editor, fertige Artikel die Leseansicht.
@@ -196,7 +200,7 @@ function card(post, canEdit) {
 
   let body;
   if (locked) {
-    body = `<p class="excerpt" aria-hidden="true">${PLACEHOLDER}</p>`;
+    body = `<p class="excerpt" aria-hidden="true">${isDraft ? PLACEHOLDER : PRIVATE_PLACEHOLDER}</p>`;
   } else if (plainText(post.body).trim()) {
     body = `<p class="excerpt" aria-hidden="${isDraft}">${escapeHtml(excerpt(plainText(post.body)))}</p>`;
   } else {

@@ -50,6 +50,7 @@ func homepageProblem(dir string) string {
 
 // Ein Artikel, wie er auf der Homepage landet (Reihenfolge der Felder wie bei PHP)
 type exportPost struct {
+	Private   bool   `json:"private,omitempty"`
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Status    string `json:"status"`
@@ -84,18 +85,29 @@ func exportBlog(store Store, homepage string) (exportSummary, error) {
 	out := []exportPost{}
 	images := map[string]bool{}
 	for _, p := range store.List() {
-		if !isPublic(p) {
-			sum.Private++
-			continue
-		}
 		isDraft := p["status"] != "published"
+		isPrivate := !isPublic(p)
+		if isPrivate {
+			sum.Private++
+			if isDraft {
+				continue // private Entwürfe: gar nicht
+			}
+		}
 		body, _ := p["body"].(string)
 		status := "published"
 		if isDraft {
-			sum.Draft++
 			body, status = "", "draft"
-		} else {
-			sum.Published++
+		}
+		if !isPrivate {
+			if isDraft {
+				sum.Draft++
+			} else {
+				sum.Published++
+			}
+		}
+		// Private Artikel: kein Text, nur Titel (verschwommen auf der Homepage)
+		if isPrivate {
+			body = ""
 		}
 		for _, m := range blogImage.FindAllStringSubmatch(body, -1) {
 			images[m[1]] = true
@@ -108,7 +120,7 @@ func exportBlog(store Store, homepage string) (exportSummary, error) {
 		title, _ := p["title"].(string)
 		created, _ := p["createdAt"].(string)
 		updated, _ := p["updatedAt"].(string)
-		out = append(out, exportPost{id, title, status, body, tags, created, updated})
+		out = append(out, exportPost{isPrivate, id, title, status, body, tags, created, updated})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 
@@ -154,41 +166,52 @@ func exportBlog(store Store, homepage string) (exportSummary, error) {
 	return sum, nil
 }
 
-// Exportieren, committen (nur blog-data/) und pushen.
+// Exportieren und – nur bei einem git-Ordner – committen (nur blog-data/) und pushen.
 // Ergebnis landet auch in data/homepage-status.json (für die Anzeige in der App).
 func publishHomepage(store Store) map[string]any {
 	dir := homepageDir()
 	result := map[string]any{"at": timestamp(), "ok": false, "changed": false, "pushed": false}
 	err := func() error {
+		postsFile := filepath.Join(dir, "blog-data", "posts.json")
+		before, _ := os.ReadFile(postsFile)
 		sum, err := exportBlog(store, dir)
 		if err != nil {
 			return err
 		}
 		result["summary"] = sum
 
-		head, _ := git(dir, publishTimeout, false, "rev-parse", "--abbrev-ref", "HEAD")
-		result["branch"] = strings.TrimSpace(head.out)
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			// Homepage ist ein git-Ordner (z. B. auf dem Mac): committen und pushen
+			head, _ := git(dir, publishTimeout, false, "rev-parse", "--abbrev-ref", "HEAD")
+			result["branch"] = strings.TrimSpace(head.out)
 
-		if _, err := git(dir, 20*time.Second, true, "add", "--", "blog-data"); err != nil {
-			return err
-		}
-		// Hat sich in blog-data/ etwas geändert?
-		diff, _ := git(dir, 20*time.Second, false, "diff", "--cached", "--quiet", "--", "blog-data")
-		changed := diff.code != 0
-		result["changed"] = changed
-		if changed {
-			// Pfadangabe: committet NUR blog-data/, auch wenn sonst noch etwas vorgemerkt ist
-			if _, err := git(dir, 20*time.Second, true, "commit", "-m", "Blog aktualisiert", "--", "blog-data"); err != nil {
+			if _, err := git(dir, 20*time.Second, true, "add", "--", "blog-data"); err != nil {
 				return err
 			}
-		}
-		// Pushen, wenn es etwas zu pushen gibt (auch ein früherer, gescheiterter Versuch)
-		ahead, _ := git(dir, 20*time.Second, false, "rev-list", "--count", "@{u}..HEAD")
-		if n, _ := strconv.Atoi(strings.TrimSpace(ahead.out)); ahead.code != 0 || n > 0 {
-			if _, err := git(dir, publishTimeout, true, "push"); err != nil {
-				return err
+			// Hat sich in blog-data/ etwas geändert?
+			diff, _ := git(dir, 20*time.Second, false, "diff", "--cached", "--quiet", "--", "blog-data")
+			changed := diff.code != 0
+			result["changed"] = changed
+			if changed {
+				// Pfadangabe: committet NUR blog-data/, auch wenn sonst noch etwas vorgemerkt ist
+				if _, err := git(dir, 20*time.Second, true, "commit", "-m", "Blog aktualisiert", "--", "blog-data"); err != nil {
+					return err
+				}
 			}
-			result["pushed"] = true
+			// Pushen, wenn es etwas zu pushen gibt (auch ein früherer, gescheiterter Versuch)
+			ahead, _ := git(dir, 20*time.Second, false, "rev-list", "--count", "@{u}..HEAD")
+			if n, _ := strconv.Atoi(strings.TrimSpace(ahead.out)); ahead.code != 0 || n > 0 {
+				if _, err := git(dir, publishTimeout, true, "push"); err != nil {
+					return err
+				}
+				result["pushed"] = true
+			}
+		} else {
+			// Ohne git (Blog und Homepage beim selben Hoster): Der Export schreibt
+			// direkt in die Homepage – damit ist alles sofort online.
+			after, _ := os.ReadFile(postsFile)
+			result["direct"] = true
+			result["changed"] = string(before) != string(after) || sum.Copied > 0 || sum.Removed > 0
 		}
 		result["ok"] = true
 		return nil

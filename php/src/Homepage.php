@@ -2,13 +2,15 @@
 // Blog -> Homepage.
 //
 // exportBlog():       schreibt die öffentlichen Artikel nach <Homepage>/blog-data/
-// publishHomepage():  exportiert, committet NUR blog-data/ und pusht – ein Hoster wie
-//                     Netlify oder GitHub Pages veröffentlicht danach von selbst.
+// publishHomepage():  exportiert; ist die Homepage ein git-Ordner, wird NUR blog-data/
+//                     committet und gepusht (Netlify, GitHub Pages …). Ohne git (gleicher
+//                     Hoster) ist der Export selbst schon die Veröffentlichung.
 //
 // Was mitkommt:
 //   veröffentlicht + öffentlich -> vollständig
 //   Entwurf + öffentlich        -> nur Titel, Datum, Themen (der Text bleibt hier)
-//   privat                      -> gar nicht
+//   privat + veröffentlicht     -> nur Titel, Datum, Themen ("private": true)
+//   privat + Entwurf            -> gar nicht
 //
 // Benutzt von bin/export.php (Kommandozeile) und api.php (Knopf/Automatik in der App).
 
@@ -52,20 +54,23 @@ function exportBlog(JsonStore $store, string $homepage): array
     $warnings = [];
 
     foreach ($store->list() as $post) {
-        if (!empty($post['private'])) {
-            $count['private']++;
-            continue;
-        }
         $isDraft = ($post['status'] ?? 'draft') !== 'published';
-        $count[$isDraft ? 'draft' : 'published']++;
+        $isPrivate = !empty($post['private']);
+        if ($isPrivate) {
+            $count['private']++;
+            if ($isDraft) continue; // private Entwürfe: gar nicht
+        } else {
+            $count[$isDraft ? 'draft' : 'published']++;
+        }
 
-        $body = $isDraft ? '' : (string)($post['body'] ?? '');
+        // Entwürfe und private Artikel: kein Text, nur Titel (verschwommen auf der Homepage)
+        $body = ($isDraft || $isPrivate) ? '' : (string)($post['body'] ?? '');
         if (preg_match_all(BLOG_IMAGE, $body, $m)) {
             foreach ($m[1] as $name) $images[$name] = true;
         }
 
-        // Nur die Felder, die die Homepage braucht (kein rev, kein private)
-        $out[] = [
+        // Nur die Felder, die die Homepage braucht (kein rev; private nur, wenn privat)
+        $out[] = ($isPrivate ? ['private' => true] : []) + [
             'id'        => $post['id'],
             'title'     => (string)($post['title'] ?? ''),
             'status'    => $isDraft ? 'draft' : 'published',
@@ -111,33 +116,43 @@ function exportBlog(JsonStore $store, string $homepage): array
 }
 
 /**
- * Exportieren, committen (nur blog-data/) und pushen.
+ * Exportieren und – nur bei einem git-Ordner – committen (nur blog-data/) und pushen.
  * Ergebnis landet auch in data/homepage-status.json (für die Anzeige in der App).
  */
 function publishHomepage(JsonStore $store): array
 {
     $result = ['at' => timestamp(), 'ok' => false, 'changed' => false, 'pushed' => false];
     try {
+        $before = @file_get_contents(HOMEPAGE_DIR . '/blog-data/posts.json');
         $summary = exportBlog($store, HOMEPAGE_DIR);
         $result['summary'] = array_diff_key($summary, ['target' => 1]);
 
-        $branch = trim(git(['rev-parse', '--abbrev-ref', 'HEAD'])['out']);
-        $result['branch'] = $branch;
+        if (file_exists(HOMEPAGE_DIR . '/.git')) {
+            // Homepage ist ein git-Ordner (z. B. auf dem Mac): committen und pushen
+            $branch = trim(git(['rev-parse', '--abbrev-ref', 'HEAD'])['out']);
+            $result['branch'] = $branch;
 
-        git(['add', '--', 'blog-data'], true);
-        // Hat sich in blog-data/ etwas geändert?
-        $result['changed'] = git(['diff', '--cached', '--quiet', '--', 'blog-data'])['code'] !== 0;
+            git(['add', '--', 'blog-data'], true);
+            // Hat sich in blog-data/ etwas geändert?
+            $result['changed'] = git(['diff', '--cached', '--quiet', '--', 'blog-data'])['code'] !== 0;
 
-        if ($result['changed']) {
-            // Pfadangabe: committet NUR blog-data/, auch wenn sonst noch etwas vorgemerkt ist
-            git(['commit', '-m', 'Blog aktualisiert', '--', 'blog-data'], true);
-        }
+            if ($result['changed']) {
+                // Pfadangabe: committet NUR blog-data/, auch wenn sonst noch etwas vorgemerkt ist
+                git(['commit', '-m', 'Blog aktualisiert', '--', 'blog-data'], true);
+            }
 
-        // Pushen, wenn es etwas zu pushen gibt (auch ein früherer, gescheiterter Versuch)
-        $ahead = git(['rev-list', '--count', '@{u}..HEAD']);
-        if ($ahead['code'] !== 0 || (int)trim($ahead['out']) > 0) {
-            git(['push'], true, PUBLISH_TIMEOUT);
-            $result['pushed'] = true;
+            // Pushen, wenn es etwas zu pushen gibt (auch ein früherer, gescheiterter Versuch)
+            $ahead = git(['rev-list', '--count', '@{u}..HEAD']);
+            if ($ahead['code'] !== 0 || (int)trim($ahead['out']) > 0) {
+                git(['push'], true, PUBLISH_TIMEOUT);
+                $result['pushed'] = true;
+            }
+        } else {
+            // Ohne git (Blog und Homepage beim selben Hoster): Der Export schreibt
+            // direkt in die Homepage – damit ist alles sofort online.
+            $result['direct'] = true;
+            $result['changed'] = $before !== @file_get_contents(HOMEPAGE_DIR . '/blog-data/posts.json')
+                || $summary['copied'] > 0 || $summary['removed'] > 0;
         }
         $result['ok'] = true;
     } catch (Throwable $e) {
