@@ -1,6 +1,6 @@
 // Leseansicht eines Artikels.
 
-import { escapeHtml, formatDate, formatDateTime, sameMinute } from '../utils.js';
+import { escapeHtml, formatDate, formatDateTime, sameMinute, visBadge } from '../utils.js';
 import { renderMarkdown, enableCopyButtons } from '../markdown.js';
 import { showPendingImages } from '../storage/sync.js';
 import { tagLinks } from '../tags.js';
@@ -28,11 +28,7 @@ export async function renderPost(root, store, id, auth) {
         ${post.createdAt && !sameMinute(post.createdAt, post.updatedAt)
           ? `<span class="edited">bearbeitet <time datetime="${post.updatedAt}">${formatDateTime(post.updatedAt)}</time></span>` : ''}
       </div>
-      ${post.private || post.status === 'draft' ? `
-        <div class="article-flags">
-          ${post.private ? '<span class="badge badge-private" title="Nur für dich sichtbar">🔒 Privat</span>' : ''}
-          ${post.status === 'draft' ? '<span class="badge">Entwurf</span>' : ''}
-        </div>` : ''}
+      ${auth.canEdit ? `<div class="article-flags">${visBadge(post)}</div>` : ''}
       ${post.tags?.length ? `<div class="article-tags">${tagLinks(post.tags)}</div>` : ''}
       </div>
       <div class="article-body md">${renderMarkdown(post.body)}</div>

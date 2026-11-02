@@ -2,7 +2,7 @@
 // Für Gäste schickt der Server bei Entwürfen und privaten (veröffentlichten) Artikeln gar keinen
 // Text (locked) – dann wird ein Platzhalter verschwommen angezeigt.
 
-import { escapeHtml, formatDate, formatDateTime, excerpt, sortTime, sameMinute } from '../utils.js';
+import { escapeHtml, formatDate, formatDateTime, excerpt, sortTime, sameMinute, VISIBILITY, visOf, visBadge } from '../utils.js';
 import { device } from '../device.js';
 import { plainText } from '../markdown.js';
 import { collectTags, tagLinks, sameTag } from '../tags.js';
@@ -11,9 +11,6 @@ import { revealOnScroll } from '../reveal.js';
 const PLACEHOLDER =
   'Dieser Artikel ist noch in Arbeit. Hier entsteht gerade ein neuer Text, ' +
   'der bald fertig geschrieben und veröffentlicht wird. Schau später wieder vorbei.';
-const PRIVATE_PLACEHOLDER =
-  'Dieser Artikel ist privat. Den Titel darf jeder sehen, der Text selbst bleibt ' +
-  'beim Verfasser. Vielleicht wird er eines Tages öffentlich – bis dahin bleibt er verschwommen.';
 
 // activeTag: nur Artikel mit diesem Thema zeigen (Route #/thema/…)
 export async function renderList(root, store, auth, activeTag = null) {
@@ -68,10 +65,10 @@ export async function renderList(root, store, auth, activeTag = null) {
     const by = device.sortBy;
     posts.sort((a, b) => sortTime(b, by).localeCompare(sortTime(a, by)));
 
-    // Nur angemeldet: Alle / Öffentlich / Privat (Besucher sehen private nur als Titel, private Entwürfe gar nicht)
+    // Nur angemeldet: Alle / 🌐 Öffentlich / 👁 Nur Titel / 🔒 Nur ich
+    // (Besucher bekommen „Nur ich“ gar nicht, „Nur Titel“ ohne Text)
     const view = auth.canEdit ? scope : 'all'; // nach dem Abmelden nicht versehentlich weiterfiltern
-    const inScope = posts.filter(p =>
-      view === 'public' ? !p.private : view === 'private' ? !!p.private : true);
+    const inScope = view === 'all' ? posts : posts.filter(p => visOf(p) === view);
     // Themenleiste immer mit allen Themen (bleibt beim Umschalten gleich);
     // Themen ohne Artikel im gewählten Bereich werden blass angezeigt
     const allTags = collectTags(posts);
@@ -80,7 +77,7 @@ export async function renderList(root, store, auth, activeTag = null) {
 
     const scopeFilter = auth.canEdit ? `
       <div class="scope-filter" role="group" aria-label="Sichtbarkeit">
-        ${[['all', 'Alle'], ['public', 'Öffentlich'], ['private', '🔒 Privat']].map(([key, label]) => `
+        ${[['all', 'Alle'], ...VISIBILITY.map(v => [v.key, v.label])].map(([key, label]) => `
           <button type="button" data-scope="${key}" aria-pressed="${scope === key}">${label}</button>`).join('')}
       </div>` : '';
 
@@ -106,10 +103,9 @@ export async function renderList(root, store, auth, activeTag = null) {
         <div class="tl-meta">
           <time datetime="${sortTime(p, by)}" title="${timesTitle(p)}">${formatDate(sortTime(p, by))}</time>
           <div class="tl-flags">
-            ${p.private ? `<span class="badge badge-private" title="${auth.canEdit ? 'Text nur für dich sichtbar' : 'Privat – nur der Titel ist öffentlich'}">🔒 Privat</span>` : ''}
-            ${p.status === 'draft'
-              ? '<span class="badge">Entwurf</span>'
-              : '<span class="badge badge-published">Veröffentlicht</span>'}
+            ${auth.canEdit ? visBadge(p)
+              : visOf(p) === 'public' ? '<span class="badge badge-published">Veröffentlicht</span>'
+              : '<span class="badge">In Arbeit</span>'}
             ${p.pending ? '<span class="badge badge-pending" title="Wird synchronisiert, sobald Netz da ist">nicht synchronisiert</span>' : ''}
           </div>
           ${p.tags?.length ? `<div class="tl-flags tl-tags">${tagLinks(p.tags, activeTag)}</div>` : ''}
@@ -118,7 +114,8 @@ export async function renderList(root, store, auth, activeTag = null) {
       </div>`).join('');
 
     const empty = activeTag ? `Noch keine Artikel zu „${escapeHtml(activeTag)}“.`
-      : scope === 'private' ? 'Noch keine privaten Artikel.' : 'Noch keine öffentlichen Artikel.';
+      : { public: 'Noch keine öffentlichen Artikel.', me: 'Keine Artikel nur für dich.', title: 'Keine Artikel mit „Nur Titel“.' }[view]
+        ?? (auth.canEdit ? 'Noch keine Artikel.' : 'Noch keine öffentlichen Artikel.');
 
     root.innerHTML = `
       <div class="list-controls">${scopeFilter}${sortFilter}</div>
@@ -189,8 +186,8 @@ function growLine(list) {
 // Die Karte selbst: Titel + Anriss (Datum, Status, Themen stehen an der Linie)
 function card(post, canEdit) {
   const isDraft = post.status === 'draft';
-  // Gäste: Entwürfe und private Artikel nur als Titel, Text verschwommen, nicht klickbar
-  const locked = (isDraft || !!post.private) && !canEdit;
+  // Gäste: alles außer „Öffentlich“ nur als Titel, Text verschwommen, nicht klickbar
+  const locked = visOf(post) !== 'public' && !canEdit;
   const title = escapeHtml(post.title || 'Ohne Titel');
 
   // Entwürfe öffnen den Editor, fertige Artikel die Leseansicht.
@@ -200,7 +197,7 @@ function card(post, canEdit) {
 
   let body;
   if (locked) {
-    body = `<p class="excerpt" aria-hidden="true">${isDraft ? PLACEHOLDER : PRIVATE_PLACEHOLDER}</p>`;
+    body = `<p class="excerpt" aria-hidden="true">${PLACEHOLDER}</p>`;
   } else if (plainText(post.body).trim()) {
     body = `<p class="excerpt" aria-hidden="${isDraft}">${escapeHtml(excerpt(plainText(post.body)))}</p>`;
   } else {

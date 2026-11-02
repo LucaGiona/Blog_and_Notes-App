@@ -1,7 +1,7 @@
 // Editor: Titel + Text (Markdown), Bilder und Code-Blöcke einfügen,
-// Vorschau, Autosave als Entwurf, Veröffentlichen-Button.
+// Vorschau, Autosave, Auswahl „Wer sieht das?“ und ein Speichern-Knopf.
 
-import { debounce, formatDateTime, sameMinute } from '../utils.js';
+import { debounce, formatDateTime, sameMinute, VISIBILITY, visOf, visData } from '../utils.js';
 import { renderMarkdown, enableCopyButtons, findBlocks, cutBlock } from '../markdown.js';
 import { prepareImage } from '../image.js';
 import { showPendingImages } from '../storage/sync.js';
@@ -31,8 +31,13 @@ export async function renderEditor(root, store, id = null) {
     <form class="editor" autocomplete="off">
       <div class="field title-field">
         <input class="editor-title" name="title" placeholder="Titel" required aria-describedby="title-error">
-        <button type="button" class="privacy-toggle" aria-pressed="true"></button>
         <p class="field-error" id="title-error" role="alert" hidden></p>
+      </div>
+
+      <div class="vis-picker" role="radiogroup" aria-label="Wer sieht den Artikel?">
+        <span class="vis-label" aria-hidden="true">Wer sieht das?</span>
+        ${VISIBILITY.map(v => `
+          <button type="button" role="radio" data-vis="${v.key}" title="${v.hint}" aria-checked="false">${v.label}</button>`).join('')}
       </div>
 
       <div class="tag-picker" role="group" aria-label="Themen">
@@ -77,10 +82,7 @@ export async function renderEditor(root, store, id = null) {
         <span class="save-status" aria-live="polite"></span>
         <span class="spacer"></span>
         <button type="button" class="btn btn-danger" data-action="delete" ${post ? '' : 'hidden'}>Löschen</button>
-        <button type="button" class="btn" data-action="draft">Zwischenspeichern</button>
-        <button type="submit" class="btn btn-primary">
-          ${post?.status === 'published' ? 'Aktualisieren' : 'Veröffentlichen'}
-        </button>
+        <button type="submit" class="btn btn-primary">Speichern</button>
       </div>
     </form>
     <div class="leave-ask" role="alertdialog" aria-modal="true" aria-labelledby="leave-ask-text" hidden>
@@ -147,8 +149,8 @@ export async function renderEditor(root, store, id = null) {
   const revOf = p => p.rev ?? p.updatedAt;
   let base = post ? revOf(post) : null;
   let tags = [...(post?.tags ?? [])];   // gewählte Themen
-  let isPrivate = post ? !!post.private : true; // nur für mich sichtbar – neue Artikel sind privat
-  let saved = { title: post?.title ?? '', body: post?.body ?? '', tags: [...tags], private: isPrivate };
+  let vis = visOf(post); // Wer sieht den Artikel? – neue Artikel: nur ich
+  let saved = { title: post?.title ?? '', body: post?.body ?? '', tags: [...tags], vis };
   let conflict = null;     // Fassung vom anderen Gerät, solange der Hinweis offen ist
   let saving = null;       // laufender Speichervorgang
   let leaving = false;     // Editor wird gerade verlassen (Speichern im Hintergrund)
@@ -158,7 +160,7 @@ export async function renderEditor(root, store, id = null) {
   const sameTags = (a, b) => a.length === b.length && a.every((t, i) => sameTag(t, b[i]));
   const isDirty = () =>
     title.value.trim() !== saved.title || body.value !== saved.body || !sameTags(tags, saved.tags)
-    || isPrivate !== saved.private;
+    || vis !== saved.vis;
   const conflictBox = root.querySelector('.conflict');
 
   function showConflict(current) {
@@ -172,35 +174,41 @@ export async function renderEditor(root, store, id = null) {
     title.value = current.title;
     body.value = current.body;
     tags = [...(current.tags ?? [])];
-    isPrivate = !!current.private;
+    vis = visOf(current);
     renderTags();
-    renderPrivacy();
+    renderVis();
     base = revOf(current);
-    saved = { title: current.title, body: current.body, tags: [...tags], private: isPrivate };
+    saved = { title: current.title, body: current.body, tags: [...tags], vis };
     if (!preview.hidden) showTab('preview');
   }
 
-  // ---------- Privat ----------
-  const privacyBtn = root.querySelector('.privacy-toggle');
+  // ---------- Wer sieht das? ----------
+  // Umschalten speichert gleich und zieht die Homepage nach – kein zweiter Knopf nötig.
+  const visPicker = root.querySelector('.vis-picker');
   let publishAfterSave = false; // nach dem Umschalten: Homepage nachziehen
-  function renderPrivacy() {
-    privacyBtn.setAttribute('aria-pressed', isPrivate);
-    privacyBtn.classList.toggle('is-active', isPrivate);
-    privacyBtn.textContent = isPrivate ? '🔒 Privat' : '🌐 Öffentlich';
-    privacyBtn.title = isPrivate
-      ? 'Privat: nur du siehst diesen Artikel – er kommt nie auf die Homepage. Antippen = öffentlich machen'
-      : 'Öffentlich: kommt beim Veröffentlichen auf die Homepage. Antippen = privat machen';
+  function renderVis() {
+    visPicker.querySelectorAll('[data-vis]').forEach(b => b.setAttribute('aria-checked', b.dataset.vis === vis));
   }
-  privacyBtn.addEventListener('click', () => {
-    isPrivate = !isPrivate;
+  visPicker.addEventListener('click', e => {
+    const choice = e.target.closest('[data-vis]')?.dataset.vis;
+    if (!choice || choice === vis) return;
+    vis = choice;
     publishAfterSave = true;
-    renderPrivacy();
-    setStatus(isPrivate
-      ? '🔒 Privat – nur für dich · speichert …'
-      : '🌐 Öffentlich – geht beim Veröffentlichen auf die Homepage');
+    renderVis();
+    setStatus(`${VISIBILITY.find(v => v.key === vis).hint} · speichert …`);
     autosave();
   });
-  renderPrivacy();
+  // Pfeiltasten wie bei Radio-Knöpfen
+  visPicker.addEventListener('keydown', e => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    const buttons = [...visPicker.querySelectorAll('[data-vis]')];
+    const i = buttons.indexOf(document.activeElement);
+    if (i < 0) return;
+    const nextBtn = buttons[(i + (e.key === 'ArrowRight' ? 1 : buttons.length - 1)) % buttons.length];
+    nextBtn.focus();
+    nextBtn.click();
+  });
+  renderVis();
 
   // ---------- Themen ----------
   // Alle bisher benutzten Themen (plus Vorschläge) als Knöpfe zum An-/Abwählen,
@@ -322,27 +330,26 @@ export async function renderEditor(root, store, id = null) {
 
   // ---------- Speichern ----------
 
-  // explicit = per Knopf (Zwischenspeichern/Veröffentlichen) – nur dann meckert ein fehlender Titel laut
+  // explicit = per Knopf „Speichern“ – nur dann meckert ein fehlender Titel laut
   //
   // Immer nur EIN Speichervorgang gleichzeitig. Läuft schon einer (z. B. ein neuer Artikel
   // wird gerade angelegt und der Server antwortet langsam), wird danach genau einmal mit dem
   // dann aktuellen Text nachgespeichert. Vorher konnte das automatische Speichern beim Tippen
   // des Titels denselben Artikel mehrmals anlegen („Jung und synchoni“, „… synchonizit“ …).
-  let next = null; // vorgemerktes Speichern { status, explicit, promise }
-  function save(newStatus, explicit = false) {
+  let next = null; // vorgemerktes Speichern { explicit, promise }
+  function save(explicit = false) {
     if (!saving) {
-      saving = doSave(newStatus, explicit).finally(() => { saving = null; });
+      saving = doSave(explicit).finally(() => { saving = null; });
       return saving;
     }
     if (next) {
-      next.status = newStatus ?? next.status;
       next.explicit ||= explicit;
       return next.promise;
     }
-    const queued = { status: newStatus, explicit };
+    const queued = { explicit };
     queued.promise = saving.catch(() => null).then(() => {
       next = null;
-      return save(queued.status, queued.explicit);
+      return save(queued.explicit);
     });
     next = queued;
     return queued.promise;
@@ -352,14 +359,14 @@ export async function renderEditor(root, store, id = null) {
     while (saving || next) await (next?.promise ?? saving).catch(() => null);
   }
 
-  async function doSave(newStatus, explicit) {
+  async function doSave(explicit) {
     if (conflict) return null; // erst entscheiden, welche Fassung gilt
+    const savingVis = vis;
     const data = {
       title: title.value.trim() || fallbackTitle,
       body: withoutMarkers(body.value), // „Bild wird hochgeladen …“ nie speichern
-      status: newStatus ?? post?.status ?? 'draft',
       tags: [...tags],
-      private: isPrivate,
+      ...visData(savingVis), // private + status
     };
     if (!data.title) {
       if (explicit) showError('Bitte zuerst einen Titel eingeben – ohne Titel wird nicht gespeichert.', title);
@@ -384,9 +391,9 @@ export async function renderEditor(root, store, id = null) {
     }
 
     clearErrors();
-    saved = { title: data.title, body: data.body, tags: data.tags, private: data.private };
-    // Privat umgeschaltet: Homepage nachziehen (bei privat -> dort entfernen; bei
-    // öffentlich + veröffentlicht -> dort zeigen). Autosave allein löst nichts aus.
+    saved = { title: data.title, body: data.body, tags: data.tags, vis: savingVis };
+    // „Wer sieht das?“ umgeschaltet: Homepage nachziehen. Tippen allein (Autosave) löst nichts aus –
+    // dafür gibt es „Speichern“.
     if (publishAfterSave) {
       publishAfterSave = false;
       requestPublish();
@@ -416,15 +423,18 @@ export async function renderEditor(root, store, id = null) {
     autosave();
   });
 
+  // „Speichern“: speichert sofort und zieht die Homepage nach (je nach „Wer sieht das?“
+  // erscheint der Artikel dort ganz, nur mit Titel oder gar nicht). Der Editor bleibt offen.
   form.addEventListener('submit', async e => {
     e.preventDefault();
     autosave.cancel();
-    const saved = await save('published', true);
+    const saved = await save(true);
     if (saved) {
-      requestPublish(); // öffentliche Artikel gehen damit auf die Homepage
-      location.hash = `#/post/${saved.id}`;
+      requestPublish();
+      if (!saved.pending) setStatus(`${statusTextOf(saved)} · Homepage wird aktualisiert`);
     }
   });
+  const statusTextOf = p => `Gespeichert um ${new Date(p.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
 
   // ---------- Text einfügen ----------
 
@@ -617,10 +627,6 @@ export async function renderEditor(root, store, id = null) {
     if (el.dataset.tool === 'code') insertCode();
 
     const action = el.dataset.action;
-    if (action === 'draft') {
-      autosave.cancel();
-      await save('draft', true);
-    }
     if (action === 'delete' && confirm('Artikel wirklich löschen?')) {
       autosave.cancel();
       try {
@@ -665,9 +671,9 @@ export async function renderEditor(root, store, id = null) {
 
     // Steht auf dem Server genau das, was hier steht? (z. B. eigenes Speichern) -> nur Stand merken
     if (current.title === title.value.trim() && current.body === body.value
-        && sameTags(current.tags ?? [], tags) && !!current.private === isPrivate) {
+        && sameTags(current.tags ?? [], tags) && visOf(current) === vis) {
       base = revOf(current);
-      saved = { title: current.title, body: current.body, tags: [...tags], private: isPrivate };
+      saved = { title: current.title, body: current.body, tags: [...tags], vis };
       return;
     }
     if (isDirty()) {
@@ -747,9 +753,6 @@ export async function renderEditor(root, store, id = null) {
   setMenuExtras([
     ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
     { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
-    // Handy: Veröffentlichen steht im Burger vor „Homepage aktualisieren“, nicht unten am Daumen
-    { label: post?.status === 'published' ? 'Aktualisieren' : 'Veröffentlichen',
-      cls: 'nav-publish', status: true, onClick: () => form.requestSubmit() },
   ]);
 
   // ---------- Ganze Seite, Tastatur ----------

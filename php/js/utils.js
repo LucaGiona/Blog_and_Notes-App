@@ -49,3 +49,35 @@ export function debounce(fn, ms) {
   wrapped.cancel = () => clearTimeout(t);
   return wrapped;
 }
+
+// ---------- Sichtbarkeit: Wer sieht den Artikel? ----------
+// Eine Auswahl mit drei Stufen. Gespeichert wird weiter als private + status
+// (so verstehen Server und Homepage-Export es unverändert):
+//   public = alle sehen alles        -> private: false, status: published
+//   title  = nur Titel, Text unscharf -> private: false, status: draft
+//   me     = nur ich (unsichtbar)    -> private: true,  status: draft
+export const VISIBILITY = [
+  { key: 'public', label: '🌐 Öffentlich', hint: 'Alle sehen den ganzen Artikel' },
+  { key: 'title',  label: '👁 Nur Titel',  hint: 'Besucher sehen nur den Titel, der Text ist verschwommen' },
+  { key: 'me',     label: '🔒 Nur ich',    hint: 'Nur du siehst den Artikel – für Besucher unsichtbar' },
+];
+
+export function visOf(post) {
+  if (!post) return 'me'; // neue Artikel
+  if (post.private) return post.status === 'published' ? 'title' : 'me'; // privat + veröffentlicht (alt) = nur Titel
+  return post.status === 'published' ? 'public' : 'title';
+}
+
+export function visData(vis) {
+  if (vis === 'public') return { private: false, status: 'published' };
+  if (vis === 'title') return { private: false, status: 'draft' };
+  return { private: true, status: 'draft' };
+}
+
+// Schild für den Zeitstrahl / die Leseansicht (angemeldet)
+export function visBadge(post) {
+  const vis = visOf(post);
+  const v = VISIBILITY.find(x => x.key === vis);
+  const cls = vis === 'public' ? 'badge-published' : vis === 'me' ? 'badge-private' : '';
+  return `<span class="badge ${cls}" title="${v.hint}">${v.label}</span>`;
+}

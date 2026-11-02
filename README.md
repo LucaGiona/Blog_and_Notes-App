@@ -28,9 +28,9 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
   Text. Auf dem Handy mit offener Tastatur bleiben nur Titel, Text und eine Knopfzeile.
   Fehlt beim Verlassen der Titel, fragt der Editor nach (Titel eingeben oder „Ohne Titel“);
   wird die App weggewischt, wird der Text als „Ohne Titel“ gesichert.
-- **🔒 Privat / 🌐 Öffentlich** – neue Artikel sind privat. Private Entwürfe bekommt ein Besucher
-  gar nicht zu sehen (kein Titel, kein Eintrag); private, aber veröffentlichte Artikel und
-  öffentliche Entwürfe zeigen nur den Titel, der Text ist verschwommen.
+- **Wer sieht das?** – eine Auswahl im Editor: 🌐 Öffentlich (alles) · 👁 Nur Titel (Text
+  verschwommen) · 🔒 Nur ich (unsichtbar, Standard für neue Artikel). Ein Knopf „Speichern“;
+  Umschalten und Speichern ziehen die Website automatisch nach.
 - **Themen** (Tags), beliebig kombinierbar, mit Filter; umbenennen und löschen in allen Artikeln.
 - **Zeitstrahl** als Startseite, Artikel steigen beim Scrollen auf. Sortiert danach, wann ein
   Artikel angelegt wurde – Knöpfe „angelegt / bearbeitet“ rechts über dem Zeitstrahl; die ganze
@@ -334,9 +334,9 @@ No framework, no build step, no dependencies. The user interface is in German.
   in between. On a phone with the keyboard open, only title, text and one row of buttons remain.
   If the title is missing when leaving, the editor asks (enter a title or save as “Ohne Titel”);
   if the app is swiped away, the text is saved as “Ohne Titel”.
-- **🔒 Private / 🌐 Public** – new posts are private. Visitors never see private drafts
-  (no title, no entry); private but published posts and public drafts show only the title,
-  the text is blurred.
+- **Who can see this?** – one choice in the editor: 🌐 Public (everything) · 👁 Title only (text
+  blurred) · 🔒 Only me (invisible, default for new posts). One “Save” button; switching and
+  saving update the website automatically.
 - **Topics** (tags), freely combinable, with a filter; rename or delete across all posts.
 - **Timeline** as the start page; posts rise into view while scrolling. Sorted by when a post
   was created – “angelegt / bearbeitet” (created / edited) buttons at the top right of the

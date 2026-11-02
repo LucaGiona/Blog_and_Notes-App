@@ -469,15 +469,14 @@ body.logged-in .site-footer { display: none; }
 .editor-body::placeholder { color: var(--muted); opacity: .6; }
 
 /* Unten, immer gleich (Handy und Desktop):
-   Hinweis · Status · Löschen links, Zwischenspeichern rechts · darunter breit Veröffentlichen/Aktualisieren */
+   Hinweis · Status · Löschen links, Speichern rechts */
 .toolbar {
   display: grid;
   grid-template-columns: 1fr 1fr;
   grid-template-areas:
     "alert alert"
     "status status"
-    "delete draft"
-    "submit submit";
+    "delete submit";
   gap: .5rem;
   align-items: center;
   padding: .75rem 0;
@@ -489,8 +488,7 @@ body.logged-in .site-footer { display: none; }
 .toolbar .editor-alert { grid-area: alert; }
 .toolbar .save-status { grid-area: status; }
 .toolbar [data-action="delete"] { grid-area: delete; justify-self: start; }
-.toolbar [data-action="draft"] { grid-area: draft; justify-self: end; }
-.toolbar [type="submit"] { grid-area: submit; width: 100%; justify-content: center; }
+.toolbar [type="submit"] { grid-area: submit; justify-self: end; min-width: 9rem; justify-content: center; }
 .save-status {
   font-family: var(--mono);
   font-size: .75rem;
@@ -505,10 +503,8 @@ body.logged-in .site-footer { display: none; }
 
 /* Fehlermeldungen im Editor – wie ein Hinweis an einem Eingabefeld */
 .field { display: grid; gap: .4rem; }
-/* Titel + Privat/Öffentlich-Schalter in einer Zeile, Fehlerhinweis darunter */
-.title-field { grid-template-columns: minmax(0, 1fr) auto; column-gap: .75rem; align-items: center; }
+/* Titel, Fehlerhinweis darunter */
 .title-field .field-error { grid-column: 1 / -1; }
-.title-field .privacy-toggle { white-space: nowrap; }
 .editor-title[aria-invalid="true"] { border-bottom: 2px solid var(--accent); }
 .field-error,
 .editor-alert {
@@ -829,14 +825,6 @@ body.logged-in .site-footer { display: none; }
 
   /* Unten: gleiche Anordnung wie auf dem Desktop, nur größere Knöpfe */
   .toolbar { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
-  /* Veröffentlichen/Aktualisieren steht auf dem Handy im Burger-Menü – unten nicht mehr am Daumen */
-  .toolbar {
-    grid-template-areas:
-      "alert alert"
-      "status status"
-      "delete draft";
-  }
-  .toolbar [type="submit"] { display: none; }
   .toolbar .btn { justify-content: center; padding: .7rem 1rem; font-size: .95rem; }
 }
 
@@ -1021,25 +1009,32 @@ body:has(.timeline) .site-header {
   .tl-right .tl-flags { justify-content: flex-start; }
 }
 
-/* ---------- Privat ---------- */
-/* Schalter im Editor (rechts neben dem Titel) */
-.privacy-toggle {
+/* ---------- Wer sieht das? (Editor, unter dem Titel) ---------- */
+.vis-picker {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+}
+.vis-label { font-family: var(--mono); font-size: .72rem; color: var(--muted); margin-right: .15rem; }
+.vis-picker button {
   font-family: var(--mono);
   font-size: .75rem;
-  padding: .4rem .75rem;
+  padding: .4rem .8rem;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   background: transparent;
-  color: var(--text);
+  color: var(--muted);
   cursor: pointer;
 }
-.privacy-toggle:hover { border-color: var(--private); }
-.privacy-toggle.is-active { background: var(--private); border-color: var(--private); color: var(--bg); }
-/* Öffentlich: grün wie „Veröffentlicht“ – auffällig, weil es auf die Homepage kann */
-.privacy-toggle:not(.is-active) { background: var(--published-bg); border-color: var(--published); color: var(--published); }
-.privacy-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.vis-picker button:hover:not([aria-checked="true"]) { color: var(--text); }
+.vis-picker button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Farben wie die Schilder im Zeitstrahl: grün = öffentlich, gelb = nur Titel, lila = nur ich */
+.vis-picker [data-vis="public"][aria-checked="true"] { background: var(--published-bg); border-color: var(--published); color: var(--published); }
+.vis-picker [data-vis="title"][aria-checked="true"] { background: var(--draft-bg); border-color: var(--draft); color: var(--draft); }
+.vis-picker [data-vis="me"][aria-checked="true"] { background: var(--private); border-color: var(--private); color: var(--bg); }
 
-/* Filter über dem Zeitstrahl (nur angemeldet): Alle / Öffentlich / Privat */
+/* Filter über dem Zeitstrahl (nur angemeldet): Alle / Öffentlich / Nur Titel / Nur ich */
 .scope-filter {
   display: inline-flex;
   padding: 2px;
@@ -1059,10 +1054,10 @@ body:has(.timeline) .site-header {
 }
 .scope-filter button:hover:not([aria-pressed="true"]) { color: var(--text); }
 .scope-filter [aria-pressed="true"] { background: var(--text); color: var(--bg); }
-.scope-filter [data-scope="private"][aria-pressed="true"] { background: var(--private); }
+.scope-filter [data-scope="me"][aria-pressed="true"] { background: var(--private); }
 .scope-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-/* Über dem Zeitstrahl: links Alle / Öffentlich / Privat, rechts die Reihenfolge */
+/* Über dem Zeitstrahl: links Alle / Öffentlich / Nur Titel / Nur ich, rechts die Reihenfolge */
 .list-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1093,7 +1088,7 @@ body:has(.timeline) .site-header {
 .sort-filter button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 @media (max-width: 600px) {
-  .privacy-toggle { font-size: .8rem; padding: .5rem .85rem; }
+  .vis-picker button { font-size: .8rem; padding: .5rem .8rem; }
   .scope-filter button { font-size: .78rem; padding: .45rem .85rem; }
   .sort-filter button { font-size: .85rem; padding: .55rem 1rem; }
   /* Beide Gruppen passen nebeneinander nicht auf ein Handy: untereinander, volle Breite,
@@ -1197,6 +1192,7 @@ body.is-typing .header-title {
 }
 body.is-typing .header-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 body.is-typing .title-field,
+body.is-typing .vis-picker,
 body.is-typing .tag-picker,
 body.is-typing .format-bar,
 body.is-typing .md-hint { display: none; }
@@ -1206,7 +1202,7 @@ body.is-typing .toolbar {
   grid-template-columns: minmax(0, 1fr) auto auto;
   grid-template-areas:
     "alert alert alert"
-    "status draft submit";
+    "status submit submit";
   padding: .35rem 0 .4rem;
 }
 body.is-typing .toolbar [data-action="delete"] { display: none; }

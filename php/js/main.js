@@ -7,7 +7,7 @@ import { connection, serverStatus } from './storage/api.js';
 import { localStore } from './storage/local.js';
 import { sync, lastSyncError } from './storage/sync.js';
 import { count as outboxCount } from './outbox.js';
-import { auth } from './auth.js';
+import { auth, OFFLINE_LOGOUT } from './auth.js';
 import { homepage, loadHomepageStatus, requestPublish, flushPublish, homepageLabel } from './homepage.js';
 import { escapeHtml } from './utils.js';
 import { device, isLocalDev } from './device.js';
@@ -116,13 +116,22 @@ homepagePublish.addEventListener('click', () => requestPublish());
 window.addEventListener('homepage:change', updateHomepage);
 
 async function logout() {
-  // Erst versuchen, Wartendes noch hochzuladen
-  if (!auth.local) await sync();
+  if (!auth.local) {
+    // Offline nicht abmelden (siehe auth.logout) – erst Server prüfen, dann Wartendes hochladen
+    if (await serverStatus() !== 'online') { alert(OFFLINE_LOGOUT); return; }
+    await sync();
+  }
+  // Online, aber der Server hat etwas abgelehnt -> bleibt im Postausgang: nachfragen
   const waiting = await outboxCount();
   if (waiting && !confirm(
-    `${waiting} Änderung(en) sind noch nicht auf dem Server.\n` +
+    `${waiting} Änderung(en) konnten nicht auf den Server geladen werden.\n` +
     'Beim Abmelden werden sie von diesem Gerät gelöscht. Trotzdem abmelden?')) return;
-  await auth.logout();
+  try {
+    await auth.logout();
+  } catch (err) {
+    alert(err.message); // Verbindung genau jetzt weg -> nichts gelöscht, angemeldet bleiben
+    return;
+  }
   afterLogout();
 }
 

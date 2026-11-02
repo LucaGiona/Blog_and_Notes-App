@@ -4,6 +4,9 @@
 import { device, clearLocalData } from './device.js';
 import { fetchWithTimeout } from './storage/api.js';
 
+export const OFFLINE_LOGOUT =
+  'Abmelden geht nur online. Deine Änderungen werden hochgeladen, sobald wieder Verbindung da ist – danach kannst du dich abmelden.';
+
 export const auth = {
   loggedIn: false,
   name: null,
@@ -71,8 +74,16 @@ export const auth = {
     device.lastUser = remember ? data.name : null;
   },
 
+  // Nur online: Offline erreicht das Abmelden den Server nicht – das Cookie bliebe gültig
+  // (man wäre danach still wieder angemeldet), und Wartendes im Postausgang wäre weg.
   async logout() {
-    try { await fetchWithTimeout('api/logout', { method: 'POST' }, 4000); } catch { /* offline: lokal trotzdem aufräumen */ }
+    let res;
+    try {
+      res = await fetchWithTimeout('api/logout', { method: 'POST' }, 4000);
+    } catch {
+      res = null;
+    }
+    if (!res || res.type === 'error') throw new Error(OFFLINE_LOGOUT);
     await this.forget();
   },
 
