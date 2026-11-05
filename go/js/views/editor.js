@@ -1,11 +1,13 @@
-// Editor: Titel + Text (Markdown), Bilder und Code-Blöcke einfügen,
+// Editor: Titel + Text (Markdown), Bilder, Sprachaufnahmen und Code-Blöcke einfügen,
 // Vorschau, Autosave, Auswahl „Wer sieht das?“ und ein Speichern-Knopf.
 
-import { debounce, formatDateTime, sameMinute, VISIBILITY, visOf, visData } from '../utils.js';
-import { renderMarkdown, enableCopyButtons, findBlocks, cutBlock } from '../markdown.js';
+import { debounce, formatDate, formatDateTime, sameMinute, VISIBILITY, visOf, visData, visBadge } from '../utils.js';
+import { renderMarkdown, enableCopyButtons, findBlocks, cutBlock, isAudio, splitSize, MAX_FLOAT } from '../markdown.js';
 import { prepareImage } from '../image.js';
+import { canRecord, startRecording, enableAudio, formatDuration } from '../audio.js';
 import { showPendingImages } from '../storage/sync.js';
-import { collectTags, cleanTag, sameTag, MAX_TAGS } from '../tags.js';
+import { collectTags, cleanTag, sameTag, MAX_TAGS, tagLinks } from '../tags.js';
+import { card } from './list.js';
 import { escapeHtml } from '../utils.js';
 import { requestPublish } from '../homepage.js';
 import { setMenuExtras } from '../nav.js';
@@ -26,6 +28,8 @@ export async function renderEditor(root, store, id = null) {
 
   // Bilder gehen nur mit Server (im localStorage-Modus gibt es keinen Upload)
   const canUpload = typeof store.upload === 'function';
+  // Sprachaufnahmen: wie Bilder nur mit Server, und nur wenn der Browser aufnehmen kann
+  const canAudio = canUpload && canRecord();
 
   root.innerHTML = `
     <form class="editor" autocomplete="off">
@@ -52,14 +56,17 @@ export async function renderEditor(root, store, id = null) {
 
       <div class="format-bar" role="toolbar" aria-label="Formatieren">
         <div class="tabs" role="tablist">
-          <button type="button" class="tab is-active" data-tab="write" role="tab" aria-selected="true">Schreiben</button>
-          <button type="button" class="tab" data-tab="preview" role="tab" aria-selected="false">Vorschau</button>
+          <button type="button" class="tab is-active" data-tab="write" role="tab" aria-selected="true" title="Text tippen">Schreiben</button>
+          <button type="button" class="tab" data-tab="preview" role="tab" aria-selected="false" title="Bilder anordnen: Größe, links/rechts, löschen">Gestalten</button>
+          <button type="button" class="tab tab-view" data-tab="view" role="tab" aria-selected="false" title="So sehen Leser den Artikel">Vorschau</button>
         </div>
         <span class="spacer"></span>
         <div class="tools">
           ${canUpload ? `
             <button type="button" class="tool" data-tool="image" title="Bild einfügen (auch per Drag & Drop oder Einfügen)">＋ Bild</button>
             <input type="file" accept="image/*" multiple hidden data-file>` : ''}
+          ${canAudio ? `
+            <button type="button" class="tool tool-rec" data-tool="record" aria-pressed="false" title="Sprachaufnahme starten – noch einmal tippen zum Beenden">● Aufnahme</button>` : ''}
           <button type="button" class="tool" data-tool="code" title="Block einfügen – für Code oder Text, mit Kopieren-Knopf">{ } Block</button>
         </div>
       </div>
@@ -76,6 +83,16 @@ export async function renderEditor(root, store, id = null) {
       <p class="md-hint">Leerzeile = neuer Absatz · **fett** · *kursiv* · # Überschrift · \`\`\` = Block</p>
       <textarea class="editor-body" name="body" placeholder="Hier schreiben …"></textarea>
       <div class="editor-preview md" hidden></div>
+      <div class="editor-view" hidden>
+        <label class="view-guest"><input type="checkbox" data-view-guest> als Besucher ansehen</label>
+        <div class="view-content"></div>
+      </div>
+
+      <div class="rec-bar" role="status" aria-live="polite" hidden>
+        <span class="rec-dot" aria-hidden="true"></span>
+        <span class="rec-text">Aufnahme <span class="rec-time">0:00</span></span>
+        <button type="button" class="btn rec-stop" data-rec="stop">■ Beenden</button>
+      </div>
 
       <div class="toolbar">
         <p class="editor-alert" role="alert" hidden></p>
@@ -180,6 +197,7 @@ export async function renderEditor(root, store, id = null) {
     base = revOf(current);
     saved = { title: current.title, body: current.body, tags: [...tags], vis };
     if (!preview.hidden) showTab('preview');
+    if (!viewBox.hidden) showTab('view');
   }
 
   // ---------- Wer sieht das? ----------
@@ -188,6 +206,11 @@ export async function renderEditor(root, store, id = null) {
   let publishAfterSave = false; // nach dem Umschalten: Homepage nachziehen
   function renderVis() {
     visPicker.querySelectorAll('[data-vis]').forEach(b => b.setAttribute('aria-checked', b.dataset.vis === vis));
+    refreshView();
+  }
+  // Vorschau-Tab offen? Dann Änderungen an Titel, „Wer sieht das?“ und Themen gleich zeigen
+  function refreshView() {
+    if (root.querySelector('.editor-view')?.hidden === false) renderView();
   }
   visPicker.addEventListener('click', e => {
     const choice = e.target.closest('[data-vis]')?.dataset.vis;
@@ -237,6 +260,7 @@ export async function renderEditor(root, store, id = null) {
       return `<button type="button" class="tag ${on ? 'is-active' : ''}" data-tag="${name}" aria-pressed="${on}">${name}</button>`;
     }).join('');
     tagInput.hidden = managing || tags.length >= MAX_TAGS;
+    refreshView();
     if (manageBtn) {
       manageBtn.textContent = managing ? 'Fertig' : '✎ Themen';
       manageBtn.setAttribute('aria-pressed', managing);
@@ -421,6 +445,7 @@ export async function renderEditor(root, store, id = null) {
     }
     setStatus('Ungespeicherte Änderungen');
     autosave();
+    if (e.target === title) refreshView();
   });
 
   // „Speichern“: speichert sofort und zieht die Homepage nach (je nach „Wer sieht das?“
@@ -474,14 +499,14 @@ export async function renderEditor(root, store, id = null) {
   let uploadCount = 0;
   let uploading = 0; // Bilder, die gerade hochgeladen werden
 
-  // Platzhalter, solange ein Bild hochgeladen wird – darf nie gespeichert werden
-  const MARKER = /^!\[Bild wird hochgeladen … \d+\]\(\)\n?/gm;
+  // Platzhalter, solange ein Bild hochgeladen bzw. eine Aufnahme gemacht wird – darf nie gespeichert werden
+  const MARKER = /^!\[(?:Bild wird hochgeladen|Sprachaufnahme läuft) … \d+\]\(\)\n?/gm;
   const withoutMarkers = text => text.replace(MARKER, '');
 
   async function uploadImages(files) {
     const images = [...files].filter(f => f.type.startsWith('image/'));
     if (!canUpload || images.length === 0) return;
-    if (preview.hidden === false) showTab('write');
+    if (body.hidden) showTab('write');
 
     for (const file of images) {
       // Platzhalter sofort einfügen, damit man weiterschreiben kann
@@ -548,24 +573,157 @@ export async function renderEditor(root, store, id = null) {
     }
   });
 
+  // ---------- Sprachaufnahme ----------
+  // Ein Tipp startet, ein zweiter beendet. Während der Aufnahme steht an der Cursor-Stelle ein
+  // Platzhalter, man kann weiterschreiben. Danach wird die Datei hochgeladen (offline: Postausgang)
+  // und der Platzhalter durch ![Sprachnotiz 0:42](uploads/…) ersetzt.
+
+  const recBar = root.querySelector('.rec-bar');
+  const recTime = root.querySelector('.rec-time');
+  const recBtn = root.querySelector('[data-tool="record"]');
+  let recording = null; // { stop, marker } solange aufgenommen wird
+  let recStarting = false;
+  let closed = false;   // Editor verlassen
+
+  function showRecording(on) {
+    recBar.hidden = !on;
+    if (recBtn) {
+      recBtn.setAttribute('aria-pressed', on);
+      recBtn.classList.toggle('is-recording', on);
+      recBtn.textContent = on ? '■ Beenden' : '● Aufnahme';
+    }
+    updateMenu(); // Burger-Menü: „● Aufnahme“ <-> „■ Aufnahme beenden“
+  }
+
+  async function toggleRecording() {
+    if (recording) return stopRecording();
+    if (recStarting) return;
+    if (body.hidden) showTab('write');
+    recStarting = true;
+    clearErrors();
+    let rec;
+    try {
+      rec = await startRecording({
+        onTick: sec => { recTime.textContent = formatDuration(sec); },
+        onEnd: () => stopRecording(), // Höchstdauer erreicht oder Mikrofon weg
+      });
+    } catch (err) {
+      showError(`Keine Aufnahme: ${err.message}`);
+      return;
+    } finally {
+      recStarting = false;
+    }
+    if (closed) { rec.stop(); return; } // Editor wurde verlassen, während nach dem Mikrofon gefragt wurde
+    const marker = `![Sprachaufnahme läuft … ${++uploadCount}]()`;
+    insert(asBlock(marker));
+    uploading++; // zählt wie ein Bild-Upload: beim Verlassen wird danach nachgespeichert
+    recording = { ...rec, marker };
+    showRecording(true);
+    setStatus('Sprachaufnahme läuft …');
+  }
+
+  async function stopRecording() {
+    if (!recording) return;
+    const { stop, marker } = recording;
+    recording = null;
+    showRecording(false);
+    try {
+      const result = await stop();
+      if (!result) {
+        replaceMarker(marker, '');
+        setStatus('Aufnahme zu kurz – verworfen');
+        return;
+      }
+      setStatus('Sprachaufnahme wird hochgeladen …');
+      const { url, pending } = await store.upload(result.file);
+      replaceMarker(marker, `![Sprachnotiz ${formatDuration(result.seconds)}](${url})`);
+      setStatus(pending ? 'Aufnahme offline gespeichert – wird später hochgeladen' : 'Sprachaufnahme eingefügt');
+    } catch (err) {
+      replaceMarker(marker, '');
+      showError(`Aufnahme nicht gespeichert: ${err.message}`);
+    } finally {
+      uploading--;
+      if (leaving && !uploading && !deleted) save();
+    }
+  }
+
+  recBar.addEventListener('click', e => {
+    if (e.target.closest('[data-rec="stop"]')) stopRecording();
+  });
+
   // ---------- Vorschau ----------
 
+  // Drei Tabs: write = Schreiben (Text), preview = Gestalten (Bilder anordnen, mit Knöpfen),
+  // view = Vorschau (ohne Knöpfe, genau wie Leser den Artikel sehen)
   function showTab(tab) {
     const isPreview = tab === 'preview';
+    const isWrite = tab === 'write';
     if (isPreview) {
       preview.innerHTML = renderMarkdown(body.value) || '<p class="excerpt-empty">Noch kein Text.</p>';
       addRemoveButtons();
       showPendingImages(preview); // offline eingefügte Bilder aus dem Postausgang zeigen
+      enableAudio(preview);
     }
+    if (tab === 'view') renderView();
     preview.hidden = !isPreview;
-    body.hidden = isPreview;
-    mdHint.hidden = isPreview; // Schreibhilfe nur beim Schreiben
+    viewBox.hidden = tab !== 'view';
+    body.hidden = !isWrite;
+    mdHint.hidden = !isWrite; // Schreibhilfe nur beim Schreiben
     form.querySelectorAll('[data-tab]').forEach(b => {
       b.classList.toggle('is-active', b.dataset.tab === tab);
       b.setAttribute('aria-selected', b.dataset.tab === tab);
     });
-    form.querySelectorAll('[data-tool]').forEach(b => (b.disabled = isPreview));
-    if (!isPreview) body.focus();
+    // „Beenden“ muss auch in den anderen Tabs gehen
+    form.querySelectorAll('[data-tool]').forEach(b => (b.disabled = !isWrite && !(b === recBtn && recording)));
+    if (isWrite) body.focus();
+  }
+
+  // ---------- Vorschau: so sehen Leser den Artikel ----------
+  // Wie die Leseansicht (Titel, Datum, Themen, Text). „Als Besucher“ zeigt, was Fremde je nach
+  // „Wer sieht das?“ sehen: alles, nur den Titel mit verschwommenem Text – oder gar nichts.
+  const viewBox = root.querySelector('.editor-view');
+  const viewContent = root.querySelector('.view-content');
+  const guestToggle = root.querySelector('[data-view-guest]');
+  guestToggle.addEventListener('change', () => renderView());
+
+  function renderView() {
+    const now = new Date().toISOString();
+    const shown = {
+      id: post?.id ?? 'neu',
+      title: title.value.trim() || 'Ohne Titel',
+      body: withoutMarkers(body.value),
+      tags: [...tags],
+      createdAt: post?.createdAt ?? now,
+      updatedAt: post?.updatedAt ?? now,
+      ...visData(vis),
+    };
+    const hint = text => `<p class="view-hint">${text}</p>`;
+
+    if (guestToggle.checked && vis === 'me') {
+      viewContent.innerHTML = hint('🔒 Besucher sehen diesen Artikel gar nicht – er steht für sie auch nicht in der Liste.');
+      return;
+    }
+    if (guestToggle.checked && vis === 'title') {
+      viewContent.innerHTML = hint('👁 Besucher sehen in der Liste nur den Titel, der Text ist verschwommen. Öffnen können sie den Artikel nicht.')
+        + `<div class="view-card"><span class="badge">In Arbeit</span>${card(shown, false)}</div>`; // Abzeichen wie in der Liste
+      return;
+    }
+    viewContent.innerHTML = `
+      <article class="article">
+        <h1>${escapeHtml(shown.title)}</h1>
+        <div class="article-info">
+          <div class="meta"><time datetime="${shown.createdAt}">${formatDate(shown.createdAt)}</time></div>
+          ${guestToggle.checked ? '' : `<div class="article-flags">${visBadge(shown)}</div>`}
+          ${shown.tags.length ? `<div class="article-tags">${tagLinks(shown.tags)}</div>` : ''}
+        </div>
+        <div class="article-body md">${renderMarkdown(shown.body) || '<p class="excerpt-empty">Noch kein Text.</p>'}</div>
+      </article>`;
+    // Links in der Vorschau nicht folgen (würde den Editor verlassen)
+    viewContent.querySelectorAll('.article-tags a').forEach(a => a.removeAttribute('href'));
+    const md = viewContent.querySelector('.article-body');
+    enableCopyButtons(md);
+    showPendingImages(md);
+    enableAudio(md);
   }
 
   // ---------- Bilder und Code-Blöcke entfernen (in der Vorschau) ----------
@@ -574,14 +732,39 @@ export async function renderEditor(root, store, id = null) {
 
   // Jedes Bild / jeder Code-Block in der Vorschau bekommt einen Papierkorb.
   // Die Reihenfolge entspricht findBlocks() – so weiß der Knopf, welche Stelle im Text gemeint ist.
+  // Bilder und Sprachaufnahmen zählen zusammen (wie in findBlocks), in der Reihenfolge im Text.
+  // Bilder bekommen zusätzlich darunter die Knöpfe für Größe (S · M · L · ganz) und Ausrichtung (◧ ▣ ◨).
   function addRemoveButtons() {
-    preview.querySelectorAll('img').forEach((img, i) => {
+    preview.querySelectorAll('img, .audio-note').forEach((el, i) => {
+      const isImage = el.matches('img');
+      const what = isImage ? 'Bild' : 'Sprachaufnahme';
       const wrap = document.createElement('span');
       wrap.className = 'removable';
-      img.replaceWith(wrap);
-      wrap.append(img);
+      el.replaceWith(wrap);
+      wrap.append(el);
       wrap.insertAdjacentHTML('beforeend',
-        `<button type="button" class="remove-btn" data-remove="image" data-index="${i}" aria-label="Bild entfernen" title="Bild entfernen">${ICON_TRASH}</button>`);
+        `<button type="button" class="remove-btn" data-remove="image" data-index="${i}" aria-label="${what} entfernen" title="${what} entfernen">${ICON_TRASH}</button>`);
+      if (!isImage) return;
+      // Die Breite sitzt in der Vorschau am Rahmen (sonst bezöge sich % auf den Rahmen selbst)
+      if (el.dataset.w) {
+        wrap.classList.add('is-sized');
+        wrap.style.setProperty('--w', `${el.dataset.w}%`);
+      }
+      const current = Number(el.dataset.w) || 100;
+      const side = el.dataset.align ?? 'mitte';
+      wrap.insertAdjacentHTML('beforeend', `
+        <span class="size-btns">
+          <span class="btn-group" role="group" aria-label="Bildgröße">
+            ${SIZES.map(([label, width, name]) => `
+              <button type="button" class="size-btn" data-size="${width}" data-index="${i}"
+                aria-pressed="${current === width}" title="${name}">${label}</button>`).join('')}
+          </span>
+          <span class="btn-group" role="group" aria-label="Ausrichtung">
+            ${ALIGNS.map(([label, align, name]) => `
+              <button type="button" class="size-btn" data-align-to="${align}" data-index="${i}"
+                aria-pressed="${side === align}" aria-label="${name}" title="${name}">${label}</button>`).join('')}
+          </span>
+        </span>`);
     });
     preview.querySelectorAll('.code-head').forEach((head, i) => {
       head.querySelector('[data-copy]').insertAdjacentHTML('beforebegin',
@@ -589,11 +772,44 @@ export async function renderEditor(root, store, id = null) {
     });
   }
 
+  // ---------- Bildgröße und Ausrichtung (in der Vorschau) ----------
+  // Steht im Text hinter der Beschreibung: ![Abendhimmel|50](uploads/…), ![Abendhimmel|25 links](…).
+  // „ganz“ = ohne Zahl. Links/rechts fließt der Text daneben – das geht nur bis halbe Breite:
+  // Wer links/rechts wählt, bekommt höchstens M; wer danach L/ganz wählt, ist wieder in der Mitte.
+  const SIZES = [['S', 25, 'Klein – ein Viertel der Breite'], ['M', 50, 'Mittel – halbe Breite'],
+    ['L', 75, 'Groß – drei Viertel der Breite'], ['ganz', 100, 'Ganze Breite']];
+  const ALIGNS = [['◧', 'links', 'Links, Text fließt rechts daneben'], ['▣', 'mitte', 'Mitte, ohne Text daneben'],
+    ['◨', 'rechts', 'Rechts, Text fließt links daneben']];
+
+  function setImage(index, change, focusSelector) {
+    const block = findBlocks(body.value).images[index];
+    if (!block || isAudio(block.url)) return;
+    const now = splitSize(block.alt);
+    let width = change.width ?? now.width ?? 100;
+    let align = 'align' in change ? change.align : now.align;
+    if (change.align && width > MAX_FLOAT) width = MAX_FLOAT;
+    if (change.width && width > MAX_FLOAT) align = null;
+    const opts = [width < 100 ? width : '', align ?? ''].filter(Boolean).join(' ');
+    const md = `![${now.alt}${opts ? `|${opts}` : ''}](${block.url})`;
+    if (body.value.slice(block.start, block.end) === md) return;
+    body.value = body.value.slice(0, block.start) + md + body.value.slice(block.end);
+
+    // Neu zeichnen, ohne dass die Vorschau springt; Fokus bleibt auf dem gewählten Knopf
+    const scroll = [preview.scrollTop, document.scrollingElement.scrollTop];
+    showTab('preview');
+    [preview.scrollTop, document.scrollingElement.scrollTop] = scroll;
+    preview.querySelector(`${focusSelector}[data-index="${index}"]`)?.focus({ preventScroll: true });
+    setStatus('Ungespeicherte Änderungen');
+    autosave();
+  }
+
   async function removeBlock(kind, index) {
     const blocks = findBlocks(body.value);
     const block = (kind === 'image' ? blocks.images : blocks.codes)[index];
     if (!block) return;
-    if (!confirm(kind === 'image' ? 'Dieses Bild aus dem Artikel entfernen?' : 'Diesen Code-Block entfernen?')) return;
+    const audio = kind === 'image' && isAudio(block.url);
+    if (!confirm(audio ? 'Diese Sprachaufnahme aus dem Artikel entfernen?'
+      : kind === 'image' ? 'Dieses Bild aus dem Artikel entfernen?' : 'Diesen Code-Block entfernen?')) return;
 
     body.value = cutBlock(body.value, block);
     showTab('preview'); // Vorschau neu zeichnen
@@ -604,7 +820,7 @@ export async function renderEditor(root, store, id = null) {
       autosave.cancel();
       const saved = await save();
       if (saved && store.removeUpload) await store.removeUpload(block.url);
-      if (saved) setStatus('Bild entfernt');
+      if (saved) setStatus(audio ? 'Sprachaufnahme entfernt' : 'Bild entfernt');
     } else {
       setStatus('Ungespeicherte Änderungen');
       autosave();
@@ -614,6 +830,13 @@ export async function renderEditor(root, store, id = null) {
   preview.addEventListener('click', e => {
     const btn = e.target.closest('[data-remove]');
     if (btn) removeBlock(btn.dataset.remove, Number(btn.dataset.index));
+    const size = e.target.closest('[data-size]');
+    if (size) setImage(Number(size.dataset.index), { width: Number(size.dataset.size) }, `[data-size="${size.dataset.size}"]`);
+    const side = e.target.closest('[data-align-to]');
+    if (side) {
+      const to = side.dataset.alignTo;
+      setImage(Number(side.dataset.index), { align: to === 'mitte' ? null : to }, `[data-align-to="${to}"]`);
+    }
   });
 
   // ---------- Klicks ----------
@@ -625,6 +848,7 @@ export async function renderEditor(root, store, id = null) {
     if (el.dataset.tab) showTab(el.dataset.tab);
     if (el.dataset.tool === 'image') fileInput.click();
     if (el.dataset.tool === 'code') insertCode();
+    if (el.dataset.tool === 'record') toggleRecording();
 
     const action = el.dataset.action;
     if (action === 'delete' && confirm('Artikel wirklich löschen?')) {
@@ -749,11 +973,16 @@ export async function renderEditor(root, store, id = null) {
   };
   document.addEventListener('visibilitychange', onHide);
 
-  // Auf dem Handy wandern „＋ Bild“ und „{ } Block“ ins Burger-Menü (CSS blendet sie hier aus)
-  setMenuExtras([
-    ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
-    { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
-  ]);
+  // Auf dem Handy wandern „＋ Bild“, „{ } Block“ und „● Aufnahme“ ins Burger-Menü (CSS blendet sie hier aus).
+  // Während der Aufnahme steht unten zusätzlich die Leiste mit „■ Beenden“.
+  function updateMenu() {
+    setMenuExtras([
+      ...(canUpload ? [{ label: '＋ Bild', onClick: () => { showTab('write'); fileInput.click(); } }] : []),
+      { label: '{ } Block', onClick: () => { showTab('write'); insertCode(); } },
+      ...(canAudio ? [{ label: recording ? '■ Aufnahme beenden' : '● Aufnahme', onClick: toggleRecording }] : []),
+    ]);
+  }
+  updateMenu();
 
   // ---------- Ganze Seite, Tastatur ----------
   // Editor füllt genau den sichtbaren Bereich (iPhone: über der Tastatur).
@@ -810,6 +1039,8 @@ export async function renderEditor(root, store, id = null) {
     html.style.removeProperty('--vv-h');
     html.style.removeProperty('--vv-top');
     autosave.cancel();
+    closed = true;
+    stopRecording(); // Editor verlassen: Aufnahme beenden und trotzdem speichern
     setMenuExtras([]);
     setLeaveGuard(null);
     document.removeEventListener('visibilitychange', onHide);

@@ -102,15 +102,16 @@ export const apiStore = {
   // Bild auf dem Server löschen (nur wenn kein Artikel es mehr verwendet, sonst 409)
   removeUpload: url => request(`api/uploads/${url.split('/').pop()}`, { method: 'DELETE' }),
 
-  // Bild hochladen -> { url: "uploads/…" }
+  // Bild oder Sprachaufnahme hochladen -> { url: "uploads/…" }
   async upload(file) {
     const form = new FormData();
-    form.append('image', file, file.name || 'bild');
+    const audio = file.type.startsWith('audio/');
+    form.append(audio ? 'audio' : 'image', file, file.name || (audio ? 'sprachnotiz' : 'bild'));
     const res = await send('api/uploads', {
       method: 'POST',
       headers: { 'X-Notizblog': '1' }, // Content-Type setzt der Browser selbst (multipart)
       body: form,
-    }, 60_000); // Bilder dürfen länger brauchen
+    }, 120_000); // Bilder und Aufnahmen dürfen länger brauchen
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) window.dispatchEvent(new Event('auth:required'));
     if (!res.ok) throw new HttpError(data.error || `Server-Fehler ${res.status}`, res.status);

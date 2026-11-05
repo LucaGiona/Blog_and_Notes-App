@@ -22,8 +22,9 @@ Ohne Framework, ohne Build-Schritt, ohne Abhängigkeiten.
 
 ### Was die App kann
 
-- **Schreiben** in Markdown mit Vorschau, Bildern (Drag & Drop, Einfügen, Kamera) und
-  Code-Blöcken mit Kopieren-Knopf; Bilder und Code-Blöcke in der Vorschau per Papierkorb entfernen.
+- **Schreiben** in Markdown mit Bildern (Drag & Drop, Einfügen, Kamera), Sprachaufnahmen und
+  Code-Blöcken mit Kopieren-Knopf. Drei Tabs: **Schreiben** (Text) · **Gestalten** (Bildgröße,
+  links/rechts, per Papierkorb entfernen) · **Vorschau** (wie Leser es sehen, auch „als Besucher“).
 - **Editor als ganze Seite:** Titel und Werkzeuge oben, Knöpfe unten, dazwischen scrollt nur der
   Text. Auf dem Handy mit offener Tastatur bleiben nur Titel, Text und eine Knopfzeile.
   Fehlt beim Verlassen der Titel, fragt der Editor nach (Titel eingeben oder „Ohne Titel“);
@@ -167,6 +168,9 @@ PWA braucht. Für private Nutzung kostenlos.
 | `> Zitat` | Zitat |
 | ```` ```js ```` … ```` ``` ```` | Code-Block mit Kopieren-Knopf |
 | `![Beschreibung](uploads/…)` | Bild (macht der Bild-Knopf automatisch) |
+| `![Sprachnotiz 0:42](uploads/….m4a)` | Audio-Player (macht „● Aufnahme“ automatisch) |
+| `![Beschreibung\|50](uploads/…)` | Bild in halber Breite (S · M · L · ganz im Tab „Gestalten“) |
+| `![Beschreibung\|40 links](uploads/…)` | Bild links, Text fließt daneben (auch `rechts`; nur bis 50 %, nicht auf dem Handy) |
 
 Eigenes HTML im Text wird nur als Text angezeigt, nie ausgeführt.
 
@@ -175,6 +179,12 @@ bleibt PNG) – dabei fallen Metadaten wie der GPS-Ort weg. Der Server prüft am
 wirklich ein Bild ist, und vergibt einen zufälligen Namen.
 PHP speichert JPG/PNG/WebP mit GD noch einmal neu (max. 2000 px), Go JPG/PNG
 (WebP prüft Go nur, die Standardbibliothek kann es nicht schreiben). GIF bleibt unverändert.
+
+**Sprachaufnahmen:** „● Aufnahme“ im Editor (Handy: im Burger-Menü) nimmt über das Mikrofon auf
+(nur HTTPS oder localhost), „■ Beenden“ lädt hoch – offline in den Postausgang. Safari und neue
+Chrome-Versionen nehmen als M4A (AAC) auf, ältere Chrome als WebM. Der Server prüft das Format am
+Dateianfang und speichert unverändert (max. 25 MB). PHP lässt ohne Einstellung nur 2 MB durch:
+lokal `php -d upload_max_filesize=25M -d post_max_size=26M -S …`, beim Hoster `php/.user.ini`.
 
 **Themen:** Unter dem Titel an-/abwählen, neue über „+ Thema“. „✎ Themen“ benennt ein Thema in
 allen Artikeln um oder löscht es dort. Die Vorschläge für den Anfang stehen in `js/tags.js`.
@@ -242,14 +252,14 @@ Sie liefert selbst nur die App-Dateien aus; `data/`, der Go-Quellcode usw. sind 
 
 ```text
 php/                                PHP-Fassung – komplett, so hochladbar
-  index.html, manifest.webmanifest, sw.js, css/, js/, fonts/, icons/   ← Oberfläche
+  index.html, manifest.webmanifest, sw.js, css/, js/, fonts/, app-icons/   ← Oberfläche
   api.php, router.php, .htaccess    API, lokaler Testserver, Apache-Regeln
   src/   config.php http.php Store.php Auth.php Uploads.php Homepage.php
   bin/   passwd.php export.php      Kommandozeile
   data/, uploads/                   deine Daten (nicht im Repo)
 go/                                 Go-Fassung – komplett, go run .
   index.html, …, css/, js/, …       ← dieselbe Oberfläche (Kopie, siehe unten)
-  icons/                            blaue Icons – Go-Fassung auf einen Blick erkennbar
+  app-icons/                        blaue Icons – Go-Fassung auf einen Blick erkennbar
   main.go api.go store.go auth.go uploads.go homepage.go config.go util.go
   data/, uploads/                   deine Daten (nicht im Repo)
 tests/   api_test.py run-both.sh    Test beider Fassungen
@@ -260,7 +270,7 @@ sync-frontend.sh                    Oberfläche von php/ nach go/ kopieren
 Bearbeitet wird sie in `php/`; danach `bash sync-frontend.sh` – das kopiert sie nach `go/`.
 `tests/run-both.sh` bricht ab, wenn die beiden Kopien voneinander abweichen.
 Ausnahme sind die Icons: Die Go-Fassung hat bewusst blaue, damit man auf dem Home-Bildschirm
-sieht, welche läuft. Das Skript lässt `go/icons/` deshalb in Ruhe.
+sieht, welche läuft. Das Skript lässt `go/app-icons/` deshalb in Ruhe.
 
 JavaScript (beide Fassungen gleich): `js/main.js` (Start, Routen, Sync, Status),
 `js/storage/` (Server + Postausgang, Browser-Speicher), `js/views/` (Zeitstrahl, Artikel, Editor, Login),
@@ -281,7 +291,7 @@ dazu `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | PUT | api/posts/:id | ändern 🔒 – `baseUpdatedAt` = bekannter `rev`; veraltet → 409 + `current` |
 | DELETE | api/posts/:id | löschen 🔒 |
 | POST | api/tags | Thema umbenennen `{from, to}` / löschen `{from, to: null}` 🔒 |
-| POST | api/uploads | Bild hochladen 🔒 (multipart `image`, Header `X-Notizblog: 1`) → `{url}` |
+| POST | api/uploads | Bild oder Aufnahme hochladen 🔒 (multipart `image` bzw. `audio`, Header `X-Notizblog: 1`) → `{url}` |
 | DELETE | api/uploads/:name | Bild löschen 🔒 – nur wenn kein Artikel es verwendet, sonst 409 |
 | GET | api/homepage | Website-Export eingestellt? letzter Stand 🔒 |
 | POST | api/homepage/publish | exportieren, `blog-data/` committen, pushen 🔒 |
@@ -306,6 +316,14 @@ Sperre nach Fehlversuchen) und vergleicht die Antworten. Braucht `php`, `go`, `g
 
 ---
 
+
+> **Hinweis Hoster (Apache):** Der Ordner für die App-Icons heißt `app-icons/`, nicht `icons/`.
+> Viele Apache-Server (auch netcup) leiten `/icons/` für alle Domains auf ihre eigenen Symbole um –
+> die Icons lieferten dort 404, und der Service Worker (Offline-Modus) installierte sich nicht.
+>
+> **Beim Hochladen `sw.js` immer ganz zum Schluss.** Sonst kann ein Gerät die neue Version mit
+> alten Dateien speichern und behält sie, bis VERSION wieder erhöht wird.
+
 ## English
 
 **[↑ Deutsche Fassung oben](#deutsch)**
@@ -328,8 +346,9 @@ No framework, no build step, no dependencies. The user interface is in German.
 
 ### Features
 
-- **Write** in Markdown with preview, images (drag & drop, paste, camera) and
-  code blocks with a copy button; remove images and code blocks in the preview via the trash icon.
+- **Write** in Markdown with images (drag & drop, paste, camera), voice notes and
+  code blocks with a copy button. Three tabs: **Schreiben** (text) · **Gestalten** (image size,
+  left/right, remove via trash icon) · **Vorschau** (as readers see it, also “as a visitor”).
 - **Full-page editor:** title and tools at the top, buttons at the bottom, only the text scrolls
   in between. On a phone with the keyboard open, only title, text and one row of buttons remain.
   If the title is missing when leaving, the editor asks (enter a title or save as “Ohne Titel”);
@@ -472,6 +491,9 @@ server, and `tailscale serve` provides the HTTPS a PWA needs. Free for personal 
 | `> quote` | quote |
 | ```` ```js ```` … ```` ``` ```` | code block with copy button |
 | `![Description](uploads/…)` | image (the image button does this for you) |
+| `![Sprachnotiz 0:42](uploads/….m4a)` | audio player (“● Aufnahme” does this for you) |
+| `![Description\|50](uploads/…)` | image at half width (S · M · L · ganz in the “Gestalten” tab) |
+| `![Description\|40 links](uploads/…)` | image on the left, text flows beside it (also `rechts`; up to 50 %, not on phones) |
 
 HTML in the text is only shown as text, never executed.
 
@@ -480,6 +502,12 @@ stays PNG) – which drops metadata such as GPS location. The server checks the 
 make sure it really is an image, and assigns a random name.
 PHP re-saves JPG/PNG/WebP once more with GD (max. 2000 px), Go JPG/PNG
 (Go only checks WebP, as the standard library cannot write it). GIF stays unchanged.
+
+**Voice notes:** “● Aufnahme” in the editor (phone: in the burger menu) records from the microphone
+(HTTPS or localhost only), “■ Beenden” uploads it – offline into the outbox. Safari and recent Chrome
+record M4A (AAC), older Chrome WebM. The server checks the format from the first bytes and stores it
+unchanged (max. 25 MB). PHP only accepts 2 MB by default: locally
+`php -d upload_max_filesize=25M -d post_max_size=26M -S …`, at your host `php/.user.ini`.
 
 **Topics:** toggle them below the title, add new ones with “+ Thema”. “✎ Themen” renames a
 topic in all posts or deletes it there. The initial suggestions are in `js/tags.js`.
@@ -547,14 +575,14 @@ It only serves the app files itself; `data/`, the Go source code etc. are blocke
 
 ```text
 php/                                PHP version – complete, ready to upload
-  index.html, manifest.webmanifest, sw.js, css/, js/, fonts/, icons/   ← interface
+  index.html, manifest.webmanifest, sw.js, css/, js/, fonts/, app-icons/   ← interface
   api.php, router.php, .htaccess    API, local dev server, Apache rules
   src/   config.php http.php Store.php Auth.php Uploads.php Homepage.php
   bin/   passwd.php export.php      command line
   data/, uploads/                   your data (not in the repo)
 go/                                 Go version – complete, go run .
   index.html, …, css/, js/, …       ← the same interface (copy, see below)
-  icons/                            blue icons – Go version recognisable at a glance
+  app-icons/                        blue icons – Go version recognisable at a glance
   main.go api.go store.go auth.go uploads.go homepage.go config.go util.go
   data/, uploads/                   your data (not in the repo)
 tests/   api_test.py run-both.sh    test of both versions
@@ -565,7 +593,7 @@ sync-frontend.sh                    copy the interface from php/ to go/
 Edit it in `php/`, then run `bash sync-frontend.sh` – it copies it to `go/`.
 `tests/run-both.sh` stops if the two copies differ.
 The icons are the exception: the Go version deliberately has blue ones, so you can tell on
-the home screen which one is running. The script therefore leaves `go/icons/` alone.
+the home screen which one is running. The script therefore leaves `go/app-icons/` alone.
 
 JavaScript (identical in both versions): `js/main.js` (startup, routes, sync, status),
 `js/storage/` (server + outbox, browser storage), `js/views/` (timeline, post, editor, login),
@@ -586,7 +614,7 @@ plus `markdown.js`, `tags.js`, `image.js`, `homepage.js`, `reveal.js`, `outbox.j
 | PUT | api/posts/:id | update 🔒 – `baseUpdatedAt` = known `rev`; outdated → 409 + `current` |
 | DELETE | api/posts/:id | delete 🔒 |
 | POST | api/tags | rename topic `{from, to}` / delete `{from, to: null}` 🔒 |
-| POST | api/uploads | upload image 🔒 (multipart `image`, header `X-Notizblog: 1`) → `{url}` |
+| POST | api/uploads | upload image or voice note 🔒 (multipart `image` or `audio`, header `X-Notizblog: 1`) → `{url}` |
 | DELETE | api/uploads/:name | delete image 🔒 – only if no post uses it, otherwise 409 |
 | GET | api/homepage | website export configured? last status 🔒 |
 | POST | api/homepage/publish | export, commit `blog-data/`, push 🔒 |

@@ -183,8 +183,9 @@ function growLine(list) {
   };
 }
 
-// Die Karte selbst: Titel + Anriss (Datum, Status, Themen stehen an der Linie)
-function card(post, canEdit) {
+// Die Karte selbst: Titel + Anriss (Datum, Status, Themen stehen an der Linie).
+// Auch vom Editor benutzt (Vorschau „als Besucher“).
+export function card(post, canEdit) {
   const isDraft = post.status === 'draft';
   // Gäste: alles außer „Öffentlich“ nur als Titel, Text verschwommen, nicht klickbar
   const locked = visOf(post) !== 'public' && !canEdit;

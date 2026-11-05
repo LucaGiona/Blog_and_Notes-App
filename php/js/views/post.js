@@ -3,6 +3,7 @@
 import { escapeHtml, formatDate, formatDateTime, sameMinute, visBadge } from '../utils.js';
 import { renderMarkdown, enableCopyButtons } from '../markdown.js';
 import { showPendingImages } from '../storage/sync.js';
+import { enableAudio } from '../audio.js';
 import { tagLinks } from '../tags.js';
 
 export async function renderPost(root, store, id, auth) {
@@ -40,4 +41,5 @@ export async function renderPost(root, store, id, auth) {
 
   enableCopyButtons(root.querySelector('.article-body'));
   showPendingImages(root.querySelector('.article-body'));
+  enableAudio(root.querySelector('.article-body'));
 }

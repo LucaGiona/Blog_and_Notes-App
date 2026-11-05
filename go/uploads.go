@@ -1,4 +1,7 @@
-// Bild-Upload – Gegenstück zu php/src/Uploads.php.
+// Bild- und Audio-Upload – Gegenstück zu php/src/Uploads.php.
+//
+// Sprachaufnahmen (Feld "audio") werden am Dateianfang geprüft (MP4/M4A, WebM, Ogg)
+// und unverändert gespeichert; Name und Endung vergibt der Server.
 //
 // - Der Dateityp wird am INHALT erkannt, nicht an der Endung.
 // - Der Dateiname wird zufällig erzeugt – nie der vom Browser.
@@ -31,19 +34,26 @@ import (
 
 var imageTypes = map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}
 
-var uploadName = regexp.MustCompile(`^[a-f0-9]{24}\.(jpg|png|webp|gif)$`)
+var uploadName = regexp.MustCompile(`^[a-f0-9]{24}\.(jpg|png|webp|gif|m4a|webm|ogg)$`)
+
+var audioContentType = map[string]string{".m4a": "audio/mp4", ".webm": "audio/webm", ".ogg": "audio/ogg"}
 
 func handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Eigener Header: fremde Webseiten können ihn nicht ohne Weiteres mitschicken (CSRF-Schutz)
 	if r.Header.Get("X-Notizblog") != "1" {
 		fail(400, "Ungültige Anfrage")
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes+1024*1024)
+	r.Body = http.MaxBytesReader(w, r.Body, maxAudioBytes+1024*1024)
+	if file, header, err := r.FormFile("audio"); err == nil {
+		defer file.Close()
+		storeAudio(file, header.Size)
+		return
+	}
 	file, header, err := r.FormFile("image")
 	if err != nil {
 		var tooBig *http.MaxBytesError
 		if errors.As(err, &tooBig) {
-			fail(413, "Bild zu groß (max. "+strconv.Itoa(maxUploadBytes/1024/1024)+" MB)")
+			fail(413, "Datei zu groß (max. "+strconv.Itoa(maxAudioBytes/1024/1024)+" MB)")
 		}
 		fail(413, "Kein Bild empfangen – evtl. zu groß für den Server")
 	}
@@ -85,6 +95,46 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 	reply(201, map[string]any{"url": "uploads/" + name})
+}
+
+// Sprachaufnahme prüfen und speichern
+func storeAudio(file io.Reader, size int64) {
+	if size > maxAudioBytes {
+		fail(413, "Aufnahme zu groß (max. "+strconv.Itoa(maxAudioBytes/1024/1024)+" MB)")
+	}
+	data, err := io.ReadAll(file)
+	if err != nil {
+		fail(400, "Upload fehlgeschlagen")
+	}
+	ext := audioType(data)
+	if ext == "" {
+		fail(415, "Nur Sprachaufnahmen als M4A, WebM oder Ogg")
+	}
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		panic(err)
+	}
+	name := randomHex(12) + "." + ext
+	if err := os.WriteFile(filepath.Join(uploadDir, name), data, 0o644); err != nil {
+		panic(err)
+	}
+	reply(201, map[string]any{"url": "uploads/" + name})
+}
+
+// Audio-Format am Dateianfang erkennen; "" = kein bekanntes Format
+func audioType(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte{0x1A, 0x45, 0xDF, 0xA3}): // Matroska/WebM
+		return "webm"
+	case bytes.HasPrefix(b, []byte("OggS")):
+		return "ogg"
+	case len(b) >= 12 && string(b[4:8]) == "ftyp": // MP4-Familie
+		switch string(b[8:12]) {
+		case "heic", "heix", "mif1", "msf1", "avif", "avis": // Fotos im selben Container
+			return ""
+		}
+		return "m4a"
+	}
+	return ""
 }
 
 // Bildtyp am Inhalt erkennen (die ersten Bytes jedes Formats)
@@ -203,7 +253,7 @@ func handleUploadDelete(name string, store Store) {
 		body, _ := p["body"].(string)
 		if strings.Contains(body, "uploads/"+name) {
 			title, _ := p["title"].(string)
-			fail(409, "Bild wird noch in „"+title+"“ verwendet")
+			fail(409, "Datei wird noch in „"+title+"“ verwendet")
 		}
 	}
 	file := filepath.Join(uploadDir, name)

@@ -6,6 +6,9 @@
 // Unterstützt:
 //   # Überschrift (## und ### auch)
 //   **fett**  *kursiv*  `code`  [Link](https://…)  ![Bild](uploads/…)
+//   ![Bild|50](uploads/…)                <- Größe in % der Spaltenbreite (wie in Obsidian), ohne = ganz
+//   ![Bild|40 links](uploads/…)          <- links/rechts: Text fließt daneben (nur bis 50 %, nicht auf dem Handy)
+//   ![Sprachnotiz 0:42](uploads/….m4a)   <- Endung .m4a/.webm/.ogg = Audio-Player
 //   - Liste / 1. Liste
 //   > Zitat
 //   ```js           <- Code-Block mit Sprache (optional)
@@ -73,12 +76,23 @@ export function renderMarkdown(text = '') {
     const para = [];
     while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) para.push(lines[i++]);
     const html = para.map(inline).join('<br>');
-    // Ein Bild allein im Absatz -> als Abbildung, nicht als Text
-    out.push(/^<img [^>]+>$/.test(html) ? `<figure>${html}</figure>` : `<p>${html}</p>`);
+    // Ein Bild allein im Absatz -> als Abbildung, nicht als Text; Audio-Player -> eigener Block
+    out.push(/^<img [^>]+>$/.test(html) ? figure(html)
+      : /^<span class="audio-note">.*<\/span>$/.test(html) && !html.includes('<br>') ? `<div class="audio-block">${html}</div>`
+      : `<p>${html}</p>`);
   }
 
-  return out.join('\n');
+  // Bild links/rechts: Neben dem Bild steht nur der Absatz (Block) direkt danach – alles Weitere
+  // beginnt unter dem Bild. Leerzeilen allein schieben in Markdown nichts nach unten.
+  const result = [];
+  out.forEach((block, k) => {
+    result.push(block);
+    if (k > 0 && isFloating(out[k - 1]) && !isFloating(block)) result.push('<div class="float-end"></div>');
+  });
+  return result.join('\n');
 }
+
+const isFloating = html => html.startsWith('<figure data-align=');
 
 function isBlockStart(line) {
   return /^\s*```/.test(line) || /^#{1,3}\s/.test(line) || /^>/.test(line) || /^\s*([-*]|\d+\.)\s+/.test(line);
@@ -103,6 +117,50 @@ const ICON_CHECK = `<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden=
 
 // Nur diese Adressen sind erlaubt – verhindert z. B. "javascript:"-Links
 const SAFE_IMG = /^(uploads\/[\w.-]+|https:\/\/[^\s"]+)$/;
+// Sprachaufnahmen erkennt man an der Endung (pending-… = offline aufgenommen, noch nicht hochgeladen)
+const AUDIO = /\.(m4a|mp4|webm|ogg)$/i;
+export const isAudio = url => AUDIO.test(url);
+
+// Kein src: Die App lädt die Datei selbst (js/audio.js), die Homepage setzt src (js/blog/blog.js)
+function audioNote(url, label) {
+  const text = label || 'Sprachaufnahme';
+  return `<span class="audio-note"><audio controls preload="none" data-audio="${url}" aria-label="${text}"></audio>`
+    + `<span class="audio-label">${text}</span></span>`;
+}
+// Größe und Ausrichtung hinter der Beschreibung:
+//   "Abendhimmel|50"        -> { alt: "Abendhimmel", width: 50, align: null }
+//   "Abendhimmel|40 links"  -> { …, width: 40, align: "links" }
+//   "Abendhimmel|rechts"    -> { …, width: 50, align: "rechts" }   (ohne Zahl: halbe Breite)
+// Breite gilt nur von 10 bis 99. Fließen geht nur bis 50 % – größer bleibt das Bild in der Mitte.
+export const MAX_FLOAT = 50;
+export function splitSize(alt) {
+  const m = alt.match(/^(.*?)\|\s*(?:(\d{1,3})\s*%?)?\s*(links|rechts)?\s*$/i);
+  if (!m || (!m[2] && !m[3])) return { alt, width: null, align: null };
+  let width = m[2] ? Number(m[2]) : null;
+  if (width !== null && (width < 10 || width >= 100)) width = null;
+  let align = m[3]?.toLowerCase() ?? null;
+  if (align && width === null) width = MAX_FLOAT;
+  if (align && width > MAX_FLOAT) align = null;
+  return { alt: m[1].trim(), width, align };
+}
+
+function imageTag(url, rawAlt) {
+  const { alt, width, align } = splitSize(rawAlt);
+  // Breite als CSS-Variable – die Grenzen fürs Handy stehen im CSS
+  const size = width ? ` data-w="${width}" style="--w: ${width}%"` : '';
+  const side = align ? ` data-align="${align}"` : '';
+  return `<img src="${url}" alt="${alt}" loading="lazy"${size}${side}>`;
+}
+
+// Bild allein im Absatz -> <figure>. Fließt es (links/rechts), bekommt die figure Breite und Seite.
+function figure(img) {
+  const align = img.match(/ data-align="(links|rechts)"/)?.[1];
+  const width = img.match(/ data-w="(\d+)"/)?.[1];
+  return align
+    ? `<figure data-align="${align}" style="--w: ${width}%">${img}</figure>`
+    : `<figure>${img}</figure>`;
+}
+
 const SAFE_LINK = /^(https?:\/\/[^\s"]+|mailto:[^\s"]+|#[\w/-]*)$/;
 
 function inline(raw) {
@@ -117,9 +175,11 @@ function inline(raw) {
   // 2. Rest escapen
   s = escapeHtml(s);
 
-  // 3. Bilder ![alt](url)
+  // 3. Bilder ![alt](url) – und Sprachaufnahmen (gleiche Schreibweise, Audio-Endung)
   s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (m, alt, url) =>
-    SAFE_IMG.test(url) ? park(`<img src="${url}" alt="${alt}" loading="lazy">`) : m);
+    !SAFE_IMG.test(url) ? m
+      : isAudio(url) ? park(audioNote(url, alt))
+      : park(imageTag(url, alt)));
 
   // 4. Links [text](url) – der Text darf fett/kursiv sein, die Tags werden geparkt
   s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
@@ -137,10 +197,10 @@ function inline(raw) {
 }
 
 // ---------- Wo stehen Bilder und Code-Blöcke im Text? ----------
-// Für die Löschen-Knöpfe in der Editor-Vorschau: Das n-te Bild in der Vorschau
-// gehört zum n-ten Eintrag in `images`. Dafür gelten genau dieselben Regeln wie
+// Für die Löschen-Knöpfe in der Editor-Vorschau: Das n-te Bild (oder die n-te Sprachaufnahme –
+// beide zählen zusammen, in Reihenfolge) in der Vorschau gehört zum n-ten Eintrag in `images`. Dafür gelten genau dieselben Regeln wie
 // beim Anzeigen (Bilder in Code-Blöcken oder `code` zählen nicht mit).
-// Ergebnis: { images: [{ start, end, url }], codes: [{ start, end }] }
+// Ergebnis: { images: [{ start, end, url, alt }], codes: [{ start, end }] }   (alt samt „|50“)
 // start/end sind Zeichenpositionen im Text.
 
 export function findBlocks(text = '') {
@@ -171,7 +231,7 @@ export function findBlocks(text = '') {
     const visible = line.replace(/`[^`]+`/g, s => ' '.repeat(s.length));
     for (const match of visible.matchAll(/!\[([^\]]*)\]\(([^)\s]+)\)/g)) {
       if (SAFE_IMG.test(match[2])) {
-        images.push({ start: pos + match.index, end: pos + match.index + match[0].length, url: match[2] });
+        images.push({ start: pos + match.index, end: pos + match.index + match[0].length, url: match[2], alt: match[1] });
       }
     }
     pos += line.length + 1;

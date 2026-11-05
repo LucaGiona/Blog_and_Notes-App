@@ -17,8 +17,9 @@
 declare(strict_types=1);
 
 // Gleiche Form wie die Dateinamen, die der Blog beim Hochladen vergibt
-const BLOG_IMAGE = '/uploads\/([a-f0-9]{24}\.(?:jpg|png|webp|gif))/';
-const BLOG_IMAGE_FILE = '/^[a-f0-9]{24}\.(jpg|png|webp|gif)$/';
+// (Bilder und Sprachaufnahmen – beide werden mit veröffentlicht)
+const BLOG_IMAGE = '/uploads\/([a-f0-9]{24}\.(?:jpg|png|webp|gif|m4a|webm|ogg))/';
+const BLOG_IMAGE_FILE = '/^[a-f0-9]{24}\.(jpg|png|webp|gif|m4a|webm|ogg)$/';
 
 /** Ist das wirklich der Homepage-Ordner? Sonst Fehlermeldung, sonst null. */
 function homepageProblem(string $homepage): ?string

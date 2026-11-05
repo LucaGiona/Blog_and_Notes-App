@@ -4,7 +4,7 @@
 //   App-Dateien (HTML, CSS, JS, Schriften)  -> sofort aus dem Zwischenspeicher (schneller Start)
 //   Artikel (GET api/posts…)                -> erst Netz, sonst Zwischenspeicher
 //                                              (die Startseite zeigt vorher schon die gespeicherte Liste)
-//   Bilder (uploads/…)                      -> erst Zwischenspeicher (ändern sich nie)
+//   Bilder, Sprachaufnahmen (uploads/…)     -> erst Zwischenspeicher (ändern sich nie)
 //   Login, Status, alles Schreibende        -> immer direkt ans Netz, nie speichern
 //
 // „Erst Netz“ heißt: Online siehst du immer den neuesten Artikel-Stand, offline den zuletzt geladenen.
@@ -16,7 +16,7 @@
 //
 // Wichtig: Bei Änderungen an der Liste unten VERSION erhöhen.
 
-const VERSION = 'v35';
+const VERSION = 'v44';
 const SHELL = `notizblog-shell-${VERSION}`;
 const API = 'notizblog-api';      // Artikel – wird beim Abmelden gelöscht
 const IMAGES = 'notizblog-img';
@@ -46,6 +46,7 @@ const SHELL_FILES = [
   'js/utils.js',
   'js/markdown.js',
   'js/image.js',
+  'js/audio.js',
   'js/auth.js',
   'js/device.js',
   'js/outbox.js',
@@ -68,14 +69,34 @@ const SHELL_FILES = [
   'fonts/ibm-plex-mono-400.woff2',
   'fonts/ibm-plex-mono-500.woff2',
   'fonts/ibm-plex-mono-600.woff2',
-  'icons/icon-192.png',
-  'icons/icon-512.png',
 ];
 
+// Schön, aber nicht nötig: Fehlt eine davon, läuft die App trotzdem offline.
+// (Bis v35 standen die Icons in SHELL_FILES. Beim Hoster lieferte /icons/… 404, weil Apache
+// diesen Pfad für alle Domains auf seine eigenen Symbole umleitet – darum heißt der Ordner
+// jetzt app-icons/. Der 404 ließ die ganze Installation scheitern: kein Offline-Speicher,
+// vorhandene Artikel offline nicht auffindbar. Das darf ein Icon nie wieder auslösen.)
+const OPTIONAL_FILES = [
+  'app-icons/icon-192.png',
+  'app-icons/icon-512.png',
+  'app-icons/apple-touch-icon.png',
+];
+
+const fresh = f => new Request(f, { cache: 'reload' });
+
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(SHELL).then(cache => cache.addAll(SHELL_FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()),
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(SHELL);
+    try {
+      // Pflicht: fehlt eine Datei, bricht die Installation ab (die alte Version bleibt aktiv)
+      await cache.addAll(SHELL_FILES.map(fresh));
+    } catch (err) {
+      await caches.delete(SHELL); // keinen halben Speicher liegen lassen
+      throw err;
+    }
+    await Promise.allSettled(OPTIONAL_FILES.map(f => cache.add(fresh(f))));
+    await self.skipWaiting();
+  })());
 });
 
 // Alte Versionen aufräumen und sofort übernehmen
@@ -106,6 +127,9 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (path.startsWith('uploads/')) {
+    // Audio-Player fragen Teilstücke an („Range“) – das kann der Zwischenspeicher nicht.
+    // Die App lädt Aufnahmen sonst ganz (js/audio.js), das hier ist nur der Notweg.
+    if (req.headers.has('range')) return;
     event.respondWith(cacheFirst(req, IMAGES));
     return;
   }

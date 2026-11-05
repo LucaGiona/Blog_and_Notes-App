@@ -18,6 +18,7 @@ const (
 	maxBodyBytes       = 1024 * 1024         // 1 MB pro Anfrage
 	cookieName         = "notizblog_session"
 	maxUploadBytes     = 10 * 1024 * 1024 // 10 MB pro Bild
+	maxAudioBytes      = 25 * 1024 * 1024 // 25 MB pro Sprachaufnahme (≈ 10 Minuten)
 	maxImageSide       = 2000             // längste Seite in Pixeln
 	maxImagePixels     = 40_000_000       // schützt den Speicher
 	publishTimeout     = 45 * time.Second // git push, danach Abbruch

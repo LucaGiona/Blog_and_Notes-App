@@ -22,6 +22,16 @@ DirectoryIndex index.html
 AddType font/woff2 .woff2
 AddType application/manifest+json .webmanifest
 
+# App-Dateien bei jedem Laden kurz mit dem Server abgleichen (304, wenn unverändert).
+# Ohne diese Angabe darf der Browser sie nach eigenem Ermessen weiterverwenden – nach einem
+# Upload lieferte Brave so noch tagelang eine alte js/auth.js aus (CHANGELOG Abschnitt 37).
+# Schriften und Bilder ändern sich nie und dürfen weiter normal zwischengespeichert werden.
+<FilesMatch "\.(html|js|css|webmanifest)$">
+  <IfModule mod_headers.c>
+    Header set Cache-Control "no-cache"
+  </IfModule>
+</FilesMatch>
+
 # Service Worker: Browser soll Updates sofort sehen
 <Files "sw.js">
   <IfModule mod_headers.c>

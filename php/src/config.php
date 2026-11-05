@@ -38,3 +38,4 @@ const MAX_BODY_BYTES = 1024 * 1024;    // 1 MB pro Anfrage
 const COOKIE_NAME    = 'notizblog_session';
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB pro Bild (Server-Limit kann kleiner sein)
 const MAX_IMAGE_SIDE   = 2000;             // längste Seite in Pixeln
+const MAX_AUDIO_BYTES  = 25 * 1024 * 1024; // 25 MB pro Sprachaufnahme (≈ 10 Minuten, auch bei hoher Qualität)

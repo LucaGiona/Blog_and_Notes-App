@@ -48,9 +48,9 @@ func main() {
 }
 
 var (
-	staticPath  = regexp.MustCompile(`^/(css|js|fonts|icons|uploads)/[\w./-]+$`)
+	staticPath  = regexp.MustCompile(`^/(css|js|fonts|app-icons|uploads)/[\w./-]+$`)
 	scriptLike  = regexp.MustCompile(`(?i)\.(php\d?|phtml|phar)$|/\.`)
-	uploadImage = regexp.MustCompile(`^/uploads/[a-f0-9]{24}\.(jpg|png|webp|gif)$`)
+	uploadImage = regexp.MustCompile(`^/uploads/[a-f0-9]{24}\.(jpg|png|webp|gif|m4a|webm|ogg)$`)
 )
 
 // Wie router.php: API, App-Dateien – und sonst nichts (data/, src/, go/ … bleiben gesperrt)
@@ -71,13 +71,16 @@ func serve(w http.ResponseWriter, r *http.Request) {
 	case staticPath.MatchString(path) && !strings.Contains(path, "..") && !scriptLike.MatchString(path):
 		dir := rootDir
 		if strings.HasPrefix(path, "/uploads/") {
-			if !uploadImage.MatchString(path) { // im Upload-Ordner nur Bilder
+			if !uploadImage.MatchString(path) { // im Upload-Ordner nur Bilder und Sprachaufnahmen
 				http.NotFound(w, r)
 				return
 			}
 			dir = filepath.Dir(uploadDir) // uploadDir kann woanders liegen
 			path = "/" + filepath.Base(uploadDir) + strings.TrimPrefix(path, "/uploads")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
+			if t, ok := audioContentType[filepath.Ext(path)]; ok {
+				w.Header().Set("Content-Type", t) // nicht jedes System kennt diese Endungen
+			}
 		}
 		if strings.HasSuffix(path, ".woff2") {
 			w.Header().Set("Content-Type", "font/woff2")

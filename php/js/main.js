@@ -34,9 +34,16 @@ const isInstalledApp =
   matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 
 // ---------- PWA ----------
+// Ist der Offline-Speicher bereit? null = noch unbekannt, false = nein (Warnung im Status).
+// Ohne aktiven Service Worker sind vorhandene Artikel offline NICHT verfügbar – nur Neues
+// landet im Postausgang. Das soll man sehen, bevor man in der U-Bahn sitzt.
+let offlineReady = null;
+
 // Service Worker nur über https oder localhost möglich (Browser-Regel)
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then(watchForUpdates).catch(err => console.warn('Service Worker:', err));
+  navigator.serviceWorker.register('sw.js')
+    .then(reg => { watchForUpdates(reg); watchOfflineReady(reg); })
+    .catch(err => { console.warn('Service Worker:', err); setOfflineReady(false); });
   // Neue App-Version installiert -> einmal neu laden, damit sie sofort gilt.
   // Nicht mitten im Schreiben: im Editor erst beim nächsten Seitenwechsel.
   const hadController = !!navigator.serviceWorker.controller;
@@ -70,6 +77,24 @@ function watchForUpdates(reg) {
   });
   window.addEventListener('focus', check);
   setInterval(check, 30 * 60_000);
+}
+
+// Aktiv ist ein Worker erst nach erfolgreicher Installation. Scheitert sie (z. B. eine
+// Startdatei liefert 404), bleibt reg.active leer – nach 20 s gilt das als „nicht bereit“.
+// Ein Update, das scheitert, stört nicht: die alte Version bleibt aktiv und offline nutzbar.
+function watchOfflineReady(reg) {
+  const check = () => setOfflineReady(!!reg.active);
+  const watch = worker => worker?.addEventListener('statechange', check);
+  navigator.serviceWorker.ready.then(check);
+  watch(reg.installing);
+  watch(reg.waiting);
+  reg.addEventListener('updatefound', () => watch(reg.installing));
+  setTimeout(check, 20_000);
+}
+function setOfflineReady(ready) {
+  if (ready === offlineReady) return;
+  offlineReady = ready;
+  renderMenuStatus();
 }
 
 // ---------- Start ----------
@@ -181,6 +206,7 @@ function renderMenuStatus() {
   const lines = [
     `<li class="${connection.online ? 'is-ok' : 'is-off'}">${connection.online ? 'Online' : 'Offline – Server nicht erreichbar'}</li>`,
   ];
+  if (offlineWarning()) lines.push('<li class="is-error">⚠ Offline-Modus nicht bereit – vorhandene Artikel sind offline nicht verfügbar</li>');
   if (lastSyncError) lines.push(`<li class="is-error">${escapeHtml(lastSyncError)}</li>`);
   else if (menuWaiting) lines.push(`<li>${menuWaiting} Änderung(en) warten auf Verbindung</li>`);
   else lines.push('<li>Alles synchronisiert</li>');
@@ -220,12 +246,15 @@ if ('caches' in window) {
   }).catch(() => {});
 }
 
+// Warnen nur, wo Offline-Arbeiten gedacht ist: angemeldet und „angemeldet bleiben“
+const offlineWarning = () => offlineReady === false && auth.loggedIn && device.trusted;
+
 // Knopf oben (Laptop): Punkt + kurzes Wort. Grün = online und alles da, gelb = Änderungen
 // warten, grau = Server nicht erreichbar, rot = Fehler (Synchronisieren oder Homepage).
 function updateStatusButton() {
   const btn = nav.querySelector('.status-btn');
   if (!btn) return;
-  const error = lastSyncError || homepage.last?.ok === false;
+  const error = lastSyncError || homepage.last?.ok === false || offlineWarning();
   const state = !connection.online ? 'is-off' : error ? 'is-error' : menuWaiting ? 'is-wait' : 'is-ok';
   const label = !connection.online ? 'Offline' : menuWaiting ? `${menuWaiting} warten` : 'Online';
   btn.dataset.state = state;

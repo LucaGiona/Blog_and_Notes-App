@@ -45,7 +45,7 @@ if (preg_match('#^/uploads/([a-f0-9]{24}\.(jpg|png|webp|gif))$#', $path, $m)) {
 
 // Nur das Frontend ausliefern – data/, src/, bin/ und PHP-Dateien sperren
 if ($path === '/' || $path === '/index.html'
-    || preg_match('#^/(css|js|fonts|icons)/[\w./-]+$#', $path) && !str_contains($path, '..')
+    || preg_match('#^/(css|js|fonts|app-icons)/[\w./-]+$#', $path) && !str_contains($path, '..')
     && !preg_match('#\.(php\d?|phtml|phar)$|/\.#i', $path)) {
     if (str_ends_with($path, '.woff2')) {
         header('Content-Type: font/woff2');

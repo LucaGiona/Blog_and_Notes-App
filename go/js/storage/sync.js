@@ -195,9 +195,10 @@ async function upload(file) {
   return directOrQueue(
     () => apiStore.upload(file),
     async () => {
-      const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+      // Endung bestimmt, wie der Artikel es anzeigt (Bild oder Audio-Player, siehe markdown.js)
+      const ext = { jpeg: 'jpg', mp4: 'm4a' }[file.type.split(/[/;]/)[1]] ?? (file.type.split(/[/;]/)[1] || 'png');
       const tempUrl = `uploads/pending-${randomId()}.${ext}`;
-      await outbox.add({ type: 'upload', tempUrl, file, name: file.name || `bild.${ext}`, at: nowIso() });
+      await outbox.add({ type: 'upload', tempUrl, file, name: file.name || `datei.${ext}`, at: nowIso() });
       notify();
       return { url: tempUrl, pending: true };
     },

@@ -26,8 +26,9 @@ import (
 )
 
 var (
-	blogImage     = regexp.MustCompile(`uploads/([a-f0-9]{24}\.(?:jpg|png|webp|gif))`)
-	blogImageFile = regexp.MustCompile(`^[a-f0-9]{24}\.(jpg|png|webp|gif)$`)
+	// Bilder und Sprachaufnahmen – beide werden mit veröffentlicht
+	blogImage     = regexp.MustCompile(`uploads/([a-f0-9]{24}\.(?:jpg|png|webp|gif|m4a|webm|ogg))`)
+	blogImageFile = regexp.MustCompile(`^[a-f0-9]{24}\.(jpg|png|webp|gif|m4a|webm|ogg)$`)
 )
 
 // Ist der Ordner brauchbar? Sonst Fehlermeldung, sonst "".

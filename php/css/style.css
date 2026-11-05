@@ -641,10 +641,13 @@ body.logged-in .site-footer { display: none; }
   outline-offset: 4px;
   border-radius: 6px;
 }
-.editor-preview { min-height: 50vh; }
+.editor-preview,
+.editor-view { min-height: 50vh; }
 
 /* ---------- Markdown-Inhalt (Artikel + Vorschau) ---------- */
-.md { font-family: var(--body); font-size: 1.1rem; line-height: 1.8; }
+.md { font-family: var(--body); font-size: 1.1rem; line-height: 1.8; display: flow-root; } /* flow-root: fließende Bilder ragen nie aus dem Artikel */
+.md[hidden] { display: none; } /* sonst überschreibt flow-root das hidden (Editor-Tabs) */
+.md .float-end { clear: both; } /* nach dem Absatz neben einem Bild geht es unter dem Bild weiter */
 .md > :first-child { margin-top: 0; }
 .md p { margin: 0 0 1.1em; }
 .md h2, .md h3, .md h4 {
@@ -821,7 +824,10 @@ body.logged-in .site-footer { display: none; }
   /* Oben: nur Schreiben/Vorschau – „＋ Bild“ und „{ } Block“ sind im Burger-Menü */
   .format-bar .tools,
   .format-bar .spacer { display: none; }
-  .tab { min-width: 7.5rem; padding: .6rem .9rem; font-size: .85rem; text-align: center; }
+  /* Drei Tabs: Schreiben und Gestalten kompakt, Vorschau nimmt den Rest */
+  .format-bar .tabs { flex: 1; }
+  .tab { padding: .6rem .75rem; font-size: .82rem; text-align: center; }
+  .tab-view { flex: 1; }
 
   /* Unten: gleiche Anordnung wie auf dem Desktop, nur größere Knöpfe */
   .toolbar { padding-bottom: calc(.75rem + env(safe-area-inset-bottom)); }
@@ -1151,7 +1157,8 @@ body.is-editing #app {
 body.is-editing .editor { display: flex; flex-direction: column; gap: .75rem; flex: 1; min-height: 0; }
 body.is-editing .editor > * { flex: none; }
 body.is-editing .editor-body,
-body.is-editing .editor-preview {
+body.is-editing .editor-preview,
+body.is-editing .editor-view {
   flex: 1 1 auto;
   min-height: 4rem;
   overflow-y: auto;
@@ -1221,3 +1228,113 @@ body.is-typing .toolbar .btn { padding: .45rem .8rem; font-size: .85rem; }
   body.is-editing .tag-options::-webkit-scrollbar { display: none; }
   body.is-editing .tag-options > * { flex: none; }
 }
+
+/* ---------- Sprachaufnahmen ---------- */
+/* Im Artikel: Player mit kleiner Beschriftung („Sprachnotiz 0:42“) */
+.audio-note { display: inline-flex; flex-direction: column; gap: .3rem; width: min(100%, 26rem); vertical-align: middle; }
+.audio-note audio { width: 100%; height: 40px; }
+.audio-label { font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+.audio-note.is-missing audio { display: none; }
+.audio-note.is-missing .audio-label::after { content: " – erst nach dem Synchronisieren abspielbar"; }
+.md .audio-block { margin: 1.2em 0; }
+.md .removable:has(> .audio-note) { width: min(100%, 26rem); padding-right: 46px; }
+.md .removable:has(> .audio-note) .remove-btn { top: 2px; right: 0; }
+
+/* Knopf oben: rot, solange aufgenommen wird */
+.tool-rec.is-recording { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+/* Leiste während der Aufnahme – auch auf dem Handy sichtbar (dort ist „● Aufnahme“ im Burger) */
+.rec-bar {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .45rem .5rem .45rem .9rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: .85rem;
+}
+.rec-bar[hidden] { display: none; }
+.rec-text { flex: 1; }
+.rec-time { font-variant-numeric: tabular-nums; }
+.rec-dot { width: .7rem; height: .7rem; border-radius: 50%; background: var(--accent); flex: none; }
+.rec-stop { padding: .4rem .9rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .rec-dot { animation: rec-pulse 1.2s ease-in-out infinite; }
+}
+@keyframes rec-pulse { 50% { opacity: .25; } }
+
+/* ---------- Bildgröße: ![Bild|50](…) = halbe Spaltenbreite ---------- */
+.md img[data-w] { width: var(--w); }
+/* Vorschau im Editor: Die Breite sitzt am Rahmen mit Papierkorb und Größen-Knöpfen */
+.removable.is-sized { width: var(--w); }
+.removable.is-sized img { width: 100%; }
+.md figure .removable.is-sized { margin-inline: auto; }
+/* Handy: kleine Bilder nicht winzig – mindestens halbe Breite */
+@media (max-width: 600px) {
+  .md img[data-w],
+  .removable.is-sized { width: max(var(--w), 50%); }
+  .removable.is-sized img { width: 100%; }
+}
+
+.size-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem .9rem; margin-top: .45rem; }
+.btn-group { display: flex; gap: .3rem; }
+.size-btn {
+  min-width: 2.4rem;
+  padding: .35rem .6rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.size-btn:hover { border-color: var(--text); }
+.size-btn[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.size-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .size-btn { min-width: 2.8rem; padding: .5rem .7rem; font-size: .8rem; } /* gut treffbar mit dem Daumen */
+}
+
+/* ---------- Bild links/rechts, Text fließt daneben: ![Bild|40 links](…) ----------
+   Nur ab 601 px – auf dem Handy wäre neben dem Bild kein Platz für Text, dort steht es mittig. */
+@media (min-width: 601px) {
+  .md figure[data-align] { width: var(--w); margin: .35em 0 1em; }
+  .md figure[data-align="links"] { float: left; margin-right: 1.5rem; }
+  .md figure[data-align="rechts"] { float: right; margin-left: 1.5rem; }
+  .md figure[data-align] img,
+  .md figure[data-align] .removable.is-sized { width: 100%; }
+  .md p > img[data-align="links"] { float: left; margin: .35em 1.5rem 1em 0; }
+  .md p > img[data-align="rechts"] { float: right; margin: .35em 0 1em 1.5rem; }
+  /* Was nicht danebenpasst, beginnt unter dem Bild: Überschriften, Blöcke, Aufnahmen, das nächste Bild */
+  .md h2, .md h3, .md h4, .md .code-block, .md .audio-block, .md blockquote,
+  .md figure { clear: both; }
+}
+
+/* ---------- Editor: Tab „Vorschau“ (so sehen Leser den Artikel) ---------- */
+.editor-view[hidden] { display: none; }
+.view-guest {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  margin-bottom: 1.25rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.view-guest input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+.view-hint {
+  margin: 0 0 1rem;
+  padding: .75rem 1rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: .95rem;
+}
+.editor-view .article-tags a { cursor: default; }
+.view-card { display: grid; gap: .6rem; justify-items: start; }
+.view-card .card { justify-self: stretch; }

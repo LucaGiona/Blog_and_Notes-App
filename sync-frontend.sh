@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Die Oberfläche (HTML, CSS, JS, Schriften) gibt es zweimal: in php/ und go/.
-# Ausnahme: icons/ – die Go-Fassung hat bewusst blaue Icons und wird nicht überschrieben.
+# Ausnahme: app-icons/ – die Go-Fassung hat bewusst blaue Icons und wird nicht überschrieben.
 # Bearbeitet wird sie in php/ – dieses Skript kopiert sie danach nach go/.
 #
 #   bash sync-frontend.sh

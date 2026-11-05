@@ -44,7 +44,7 @@ try {
         json(200, ['loggedIn' => $user !== null, 'name' => $user ?? '', 'configured' => $auth->configured()]);
     }
 
-    // ---------- Bilder ----------
+    // ---------- Bilder und Sprachaufnahmen ----------
     if ($path === '/uploads' && $method === 'POST') {
         $auth->require();
         handleUpload();
